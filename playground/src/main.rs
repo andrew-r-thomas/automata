@@ -6,13 +6,7 @@ use nannou::{
 };
 
 fn main() {
-    nannou::app(model)
-        .loop_mode(LoopMode::Rate {
-            update_interval: Duration::from_millis(30),
-        })
-        .fullscreen()
-        .update(update)
-        .run();
+    nannou::app(model).view(view).update(update).run();
 }
 
 struct Model {
@@ -23,18 +17,18 @@ struct Model {
 fn model(app: &App) -> Model {
     let window = app.new_window().view(view).build().unwrap();
     // TODO make patterns const (probably need arrays for this)
-    let blank = vec![vec![false; 128]; 128];
+    let blank = vec![vec![false; 64]; 64];
     let mut rng = rand::thread_rng();
-    let mut random = vec![vec![false; 128]; 128];
+    let mut random = vec![vec![false; 64]; 64];
     for row in random.iter_mut() {
         for cell in row.iter_mut() {
             *cell = rng.gen::<bool>();
         }
     }
     let blinker = vec![
-        vec![vec![false; 128]; 64],
-        vec![vec![vec![false; 64], vec![true; 3], vec![false; 61]].concat()],
-        vec![vec![false; 128]; 63],
+        vec![vec![false; 64]; 64],
+        vec![vec![vec![false; 32], vec![true; 3], vec![false; 29]].concat()],
+        vec![vec![false; 64]; 63],
     ]
     .concat();
 
