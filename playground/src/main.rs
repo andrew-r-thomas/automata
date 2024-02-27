@@ -1,7 +1,7 @@
 use nannou::prelude::*;
 
 fn main() {
-    nannou::app(model).update(update).run();
+    nannou::app(model).fullscreen().update(update).run();
 }
 
 struct Model {
@@ -10,7 +10,7 @@ struct Model {
 }
 
 fn model(app: &App) -> Model {
-    let window = app.new_window().fullscreen().view(view).build().unwrap();
+    let window = app.new_window().view(view).build().unwrap();
     // TODO make patterns const (probably need arrays for this)
     let blank = vec![vec![false; 128]];
     let blinker = vec![
@@ -27,20 +27,29 @@ fn model(app: &App) -> Model {
 }
 
 fn update(_app: &App, model: &mut Model, _update: Update) {
-    let mut board = model.board.clone();
-    for row_idx in 0..board.len() {
-        for col_idx in 0..board.len() {
-            let cell = board[row_idx][col_idx];
+    let mut new_board = model.board.clone();
+    for row_idx in 0..new_board.len() {
+        for col_idx in 0..new_board.len() {
+            let cell = model.board[row_idx][col_idx];
             let adj: u8 = {
-                let tl = match board.get(row_idx - 1) {
-                    Some(x) => match x.get(col_idx - 1) {
+                let tl = match model.board.get(match row_idx.checked_sub(1) {
+                    Some(x) => x,
+                    None => usize::max_value(),
+                }) {
+                    Some(x) => match x.get(match col_idx.checked_sub(1) {
+                        Some(x) => x,
+                        None => usize::max_value(),
+                    }) {
                         Some(x) => *x as u8,
                         None => 0,
                     },
                     None => 0,
                 };
 
-                let tc = match board.get(row_idx - 1) {
+                let tc = match model.board.get(match row_idx.checked_sub(1) {
+                    Some(x) => x,
+                    None => usize::max_value(),
+                }) {
                     Some(x) => match x.get(col_idx) {
                         Some(x) => *x as u8,
                         None => 0,
@@ -48,7 +57,10 @@ fn update(_app: &App, model: &mut Model, _update: Update) {
                     None => 0,
                 };
 
-                let tr = match board.get(row_idx - 1) {
+                let tr = match model.board.get(match row_idx.checked_sub(1) {
+                    Some(x) => x,
+                    None => usize::max_value(),
+                }) {
                     Some(x) => match x.get(col_idx + 1) {
                         Some(x) => *x as u8,
                         None => 0,
@@ -56,15 +68,18 @@ fn update(_app: &App, model: &mut Model, _update: Update) {
                     None => 0,
                 };
 
-                let cl = match board.get(row_idx) {
-                    Some(x) => match x.get(col_idx - 1) {
+                let cl = match model.board.get(row_idx) {
+                    Some(x) => match x.get(match col_idx.checked_sub(1) {
+                        Some(x) => x,
+                        None => usize::max_value(),
+                    }) {
                         Some(x) => *x as u8,
                         None => 0,
                     },
                     None => 0,
                 };
 
-                let cr = match board.get(row_idx) {
+                let cr = match model.board.get(row_idx) {
                     Some(x) => match x.get(col_idx + 1) {
                         Some(x) => *x as u8,
                         None => 0,
@@ -72,22 +87,25 @@ fn update(_app: &App, model: &mut Model, _update: Update) {
                     None => 0,
                 };
 
-                let bl = match board.get(row_idx + 1) {
-                    Some(x) => match x.get(col_idx - 1) {
+                let bl = match model.board.get(row_idx + 1) {
+                    Some(x) => match x.get(match col_idx.checked_sub(1) {
+                        Some(x) => x,
+                        None => usize::max_value(),
+                    }) {
                         Some(x) => *x as u8,
                         None => 0,
                     },
                     None => 0,
                 };
 
-                let bc = match board.get(row_idx + 1) {
+                let bc = match model.board.get(row_idx + 1) {
                     Some(x) => match x.get(col_idx) {
                         Some(x) => *x as u8,
                         None => 0,
                     },
                     None => 0,
                 };
-                let br = match board.get(row_idx + 1) {
+                let br = match model.board.get(row_idx + 1) {
                     Some(x) => match x.get(col_idx + 1) {
                         Some(x) => *x as u8,
                         None => 0,
@@ -100,17 +118,17 @@ fn update(_app: &App, model: &mut Model, _update: Update) {
 
             if cell {
                 if adj < 2 || adj > 3 {
-                    board[row_idx][col_idx] = false;
+                    new_board[row_idx][col_idx] = false;
                 }
             }
 
             if !cell && adj == 3 {
-                board[row_idx][col_idx] = true;
+                new_board[row_idx][col_idx] = true;
             }
         }
     }
 
-    model.board = board;
+    model.board = new_board;
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
