@@ -28,66 +28,74 @@ fn model(app: &App) -> Model {
 
 fn update(_app: &App, model: &mut Model, _update: Update) {
     let mut board = model.board.clone();
-    for row_idx in 0..board.len() - 1 {
-        for col_idx in 0..board.len() - 1 {
+    for row_idx in 0..board.len() {
+        for col_idx in 0..board.len() {
             let cell = board[row_idx][col_idx];
             let adj: u8 = {
-                if row_idx == 0 {
-                    if col_idx == 0 {
-                        board[row_idx + 1][col_idx + 1] as u8
-                            + board[row_idx + 1][col_idx] as u8
-                            + board[row_idx][col_idx + 1] as u8
-                    } else if col_idx == board.len() {
-                        board[row_idx + 1][col_idx] as u8
-                            + board[row_idx + 1][col_idx - 1] as u8
-                            + board[row_idx][col_idx - 1] as u8
-                    } else {
-                        board[row_idx][col_idx - 1] as u8
-                            + board[row_idx][col_idx + 1] as u8
-                            + board[row_idx + 1][col_idx - 1] as u8
-                            + board[row_idx + 1][col_idx] as u8
-                            + board[row_idx + 1][col_idx + 1] as u8
-                    }
-                } else if row_idx == board.len() {
-                    if col_idx == 0 {
-                        board[row_idx][col_idx + 1] as u8
-                            + board[row_idx - 1][col_idx] as u8
-                            + board[row_idx - 1][col_idx + 1] as u8
-                    } else if col_idx == board.len() {
-                        board[row_idx - 1][col_idx] as u8
-                            + board[row_idx - 1][col_idx - 1] as u8
-                            + board[row_idx][col_idx - 1] as u8
-                    } else {
-                        board[row_idx][col_idx - 1] as u8
-                            + board[row_idx][col_idx + 1] as u8
-                            + board[row_idx - 1][col_idx - 1] as u8
-                            + board[row_idx - 1][col_idx] as u8
-                            + board[row_idx - 1][col_idx + 1] as u8
-                    }
-                } else {
-                    if col_idx == 0 {
-                        board[row_idx][col_idx + 1] as u8
-                            + board[row_idx - 1][col_idx] as u8
-                            + board[row_idx - 1][col_idx + 1] as u8
-                            + board[row_idx + 1][col_idx] as u8
-                            + board[row_idx + 1][col_idx + 1] as u8
-                    } else if col_idx == board.len() {
-                        board[row_idx - 1][col_idx] as u8
-                            + board[row_idx - 1][col_idx - 1] as u8
-                            + board[row_idx][col_idx - 1] as u8
-                            + board[row_idx + 1][col_idx] as u8
-                            + board[row_idx + 1][col_idx - 1] as u8
-                    } else {
-                        board[row_idx][col_idx - 1] as u8
-                            + board[row_idx][col_idx + 1] as u8
-                            + board[row_idx - 1][col_idx - 1] as u8
-                            + board[row_idx - 1][col_idx] as u8
-                            + board[row_idx - 1][col_idx + 1] as u8
-                            + board[row_idx + 1][col_idx - 1] as u8
-                            + board[row_idx + 1][col_idx] as u8
-                            + board[row_idx + 1][col_idx + 1] as u8
-                    }
-                }
+                let tl = match board.get(row_idx - 1) {
+                    Some(x) => match x.get(col_idx - 1) {
+                        Some(x) => *x as u8,
+                        None => 0,
+                    },
+                    None => 0,
+                };
+
+                let tc = match board.get(row_idx - 1) {
+                    Some(x) => match x.get(col_idx) {
+                        Some(x) => *x as u8,
+                        None => 0,
+                    },
+                    None => 0,
+                };
+
+                let tr = match board.get(row_idx - 1) {
+                    Some(x) => match x.get(col_idx + 1) {
+                        Some(x) => *x as u8,
+                        None => 0,
+                    },
+                    None => 0,
+                };
+
+                let cl = match board.get(row_idx) {
+                    Some(x) => match x.get(col_idx - 1) {
+                        Some(x) => *x as u8,
+                        None => 0,
+                    },
+                    None => 0,
+                };
+
+                let cr = match board.get(row_idx) {
+                    Some(x) => match x.get(col_idx + 1) {
+                        Some(x) => *x as u8,
+                        None => 0,
+                    },
+                    None => 0,
+                };
+
+                let bl = match board.get(row_idx + 1) {
+                    Some(x) => match x.get(col_idx - 1) {
+                        Some(x) => *x as u8,
+                        None => 0,
+                    },
+                    None => 0,
+                };
+
+                let bc = match board.get(row_idx + 1) {
+                    Some(x) => match x.get(col_idx) {
+                        Some(x) => *x as u8,
+                        None => 0,
+                    },
+                    None => 0,
+                };
+                let br = match board.get(row_idx + 1) {
+                    Some(x) => match x.get(col_idx + 1) {
+                        Some(x) => *x as u8,
+                        None => 0,
+                    },
+                    None => 0,
+                };
+
+                tl + tc + tr + cl + cr + bl + bc + br
             };
 
             if cell {
