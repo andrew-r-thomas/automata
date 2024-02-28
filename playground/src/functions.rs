@@ -53,7 +53,7 @@ pub fn model(app: &App) -> Model {
         io::stdin()
             .read_line(&mut speedstr)
             .expect("Failed to read line");
-    
+
         let speedstr: u32 = match speedstr.trim().parse() {
             Ok(num) => num,
             Err(_) => continue,
@@ -114,7 +114,6 @@ pub fn update(_app: &App, _model: &mut Model, _update: Update) {
         born.clear();
 
         sleep(Duration::from_millis(_model.speed.into()));
-        
     }
 }
 
@@ -133,7 +132,6 @@ pub fn find_neighbors(pos: &(i32, i32)) -> Vec<(i32, i32)> {
 
 pub fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
-
 
     draw.background().color(model.colors[0]);
     let bottomleft: (f32, f32) = ((app.window_rect().bottom_left().x/model.zoom_scale), (app.window_rect().bottom_left().y/model.zoom_scale));
@@ -155,7 +153,7 @@ pub fn view(app: &App, model: &Model, frame: Frame) {
                 .w_h(width, 1.0)
                 .color(GRAY);
         }
-    }   
+    }
     draw.text(&format!("Total Alive: {}", model.alive_hash.len()))
         .w_h(width, height)
         .left_justify()
@@ -174,7 +172,7 @@ pub fn view(app: &App, model: &Model, frame: Frame) {
     } else {
         model.colors[1]
     });
-    
+
     //loop through every alive cell and draw a rectangle at that coordinate
     for i in &model.alive_hash {
         draw.rect()
