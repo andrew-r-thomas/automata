@@ -1,3 +1,5 @@
+pub mod patterns;
+
 use std::time::Duration;
 
 use nannou::{
@@ -17,7 +19,6 @@ struct Model {
 fn model(app: &App) -> Model {
     let window = app.new_window().view(view).build().unwrap();
     // TODO make patterns const (probably need arrays for this)
-    let blank = vec![vec![false; 64]; 64];
     let mut rng = rand::thread_rng();
     let mut random = vec![vec![false; 64]; 64];
     for row in random.iter_mut() {
