@@ -1,3 +1,5 @@
+pub mod editor;
+
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
@@ -80,7 +82,6 @@ impl Plugin for Automata {
         names: PortNames::const_default(),
     }];
 
-
     const MIDI_INPUT: MidiConfig = MidiConfig::None;
     const MIDI_OUTPUT: MidiConfig = MidiConfig::None;
 
@@ -136,7 +137,7 @@ impl Plugin for Automata {
 }
 
 impl ClapPlugin for Automata {
-    const CLAP_ID: &'static str = "com.diystudios.automata";
+    const CLAP_ID: &'static str = "com.diy!studios.automata";
     const CLAP_DESCRIPTION: Option<&'static str> = Some("A short description of your plugin");
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
@@ -146,12 +147,12 @@ impl ClapPlugin for Automata {
 }
 
 impl Vst3Plugin for Automata {
-    const VST3_CLASS_ID: [u8; 16] = *b"Exactly16Chars!!";
+    const VST3_CLASS_ID: [u8; 16] = *b"diy!studiosatmta";
 
     // And also don't forget to change these categories
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
         &[Vst3SubCategory::Fx, Vst3SubCategory::Dynamics];
 }
 
-nih_export_clap!(Automata);
+// nih_export_clap!(Automata);
 nih_export_vst3!(Automata);
