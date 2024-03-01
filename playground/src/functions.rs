@@ -3,7 +3,10 @@ use std::{thread::sleep, time::Duration};
 
 use nannou::color::{Srgb, BLACK, WHITE};
 use nannou::event::Update;
+use nannou::rand::rand;
 use nannou::{App, Frame};
+
+use crate::patterns::*;
 
 pub struct Model {
     pub alive_hash: HashSet<(i32, i32)>,
@@ -14,11 +17,14 @@ pub struct Model {
 }
 
 pub fn model(app: &App) -> Model {
-    let alive_hash: HashSet<(i32, i32)> = HashSet::new();
+    let mut alive_hash: HashSet<(i32, i32)> = HashSet::new();
     let movement_offset = [0; 2];
     let colors = [BLACK, WHITE];
     let zoom_scale = 10.0;
-    let speed = 30;
+    let speed = 300;
+
+    let random = generate_random(128);
+    load_pattern(&mut alive_hash, random.as_slice());
 
     app.new_window()
         .size(1005, 1005)
@@ -34,6 +40,25 @@ pub fn model(app: &App) -> Model {
         zoom_scale,
         colors,
     }
+}
+
+pub fn load_pattern(alive_hash: &mut HashSet<(i32, i32)>, pattern: &[(i32, i32)]) {
+    alive_hash.clear();
+    for cell in pattern {
+        alive_hash.insert(*cell);
+    }
+}
+
+pub fn generate_random(size: usize) -> Vec<(i32, i32)> {
+    let mut out = vec![];
+    for i in 0..size {
+        for j in 0..size {
+            if rand::random() {
+                out.push((i as i32 - 100, j as i32 - 100));
+            }
+        }
+    }
+    out
 }
 
 pub fn update(_app: &App, _model: &mut Model, _update: Update) {
