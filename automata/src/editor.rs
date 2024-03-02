@@ -26,13 +26,25 @@ pub enum GUIEvent {
 
 impl Model for Data {
     fn event(&mut self, _: &mut EventContext, event: &mut Event) {
-        event.map(|gui_event, _| match gui_event {
+        event.map(|gui_event: &GUIEvent, _| match gui_event {
             GUIEvent::PlayPause => {
-                if self.running {
-                    self.running = false;
+                self.running = !self.running;
+                match self.game_loop_sender.send(GUIEvent::PlayPause) {
+                    Ok(_) => {}
+                    Err(_) => {
+                        todo!()
+                    }
                 }
             }
-            GUIEvent::Reset => {}
+            GUIEvent::Reset => {
+                self.running = false;
+                match self.game_loop_sender.send(GUIEvent::Reset) {
+                    Ok(_) => {}
+                    Err(_) => {
+                        todo!()
+                    }
+                }
+            }
         });
     }
 }
