@@ -1,9 +1,10 @@
 pub mod editor;
 
-use editor::DEFAULT_SIZE;
+use editor::DEFAULT_IR_SIZE;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use realfft::num_complex::Complex;
+use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rtrb::*;
 use std::sync::Arc;
 
@@ -15,6 +16,12 @@ struct Automata {
     params: Arc<AutomataParams>,
     ir_consumer: Option<Consumer<Complex<f32>>>,
     current_ir: Vec<Complex<f32>>,
+    fft: Option<Arc<dyn RealToComplex<f32>>>,
+    ifft: Option<Arc<dyn ComplexToReal<f32>>>,
+    fft_input: Vec<f32>,
+    fft_output: Vec<Complex<f32>>,
+    ifft_input: Vec<Complex<f32>>,
+    ifft_output: Vec<f32>,
 }
 
 #[derive(Params)]
@@ -35,7 +42,13 @@ impl Default for Automata {
         Self {
             params: Arc::new(AutomataParams::default()),
             ir_consumer: None,
-            current_ir: Vec::with_capacity(DEFAULT_SIZE),
+            current_ir: Vec::with_capacity(DEFAULT_IR_SIZE),
+            fft: None,
+            ifft: None,
+            fft_input: Vec::with_capacity(DEFAULT_IR_SIZE * 2),
+            fft_output: Vec::with_capacity(DEFAULT_IR_SIZE),
+            ifft_input: Vec::with_capacity(DEFAULT_IR_SIZE),
+            ifft_output: Vec::with_capacity(DEFAULT_IR_SIZE * 2),
         }
     }
 }
@@ -127,7 +140,24 @@ impl Plugin for Automata {
         // Resize buffers and perform other potentially expensive initialization operations here.
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
-        self.current_ir = Vec::with_capacity(DEFAULT_SIZE);
+        self.current_ir = Vec::with_capacity(DEFAULT_IR_SIZE);
+
+        let mut planner = RealFftPlanner::<f32>::new();
+        let fft = planner.plan_fft_forward(DEFAULT_IR_SIZE * 2);
+        let ifft = planner.plan_fft_inverse(DEFAULT_IR_SIZE * 2);
+
+        let fft_input = fft.make_input_vec();
+        let fft_output = fft.make_output_vec();
+        let ifft_input = ifft.make_input_vec();
+        let ifft_output = ifft.make_output_vec();
+
+        self.fft = Some(fft);
+        self.ifft = Some(ifft);
+        self.fft_input = fft_input;
+        self.fft_output = fft_output;
+        self.ifft_input = ifft_input;
+        self.ifft_output = ifft_output;
+
         true
     }
 
@@ -153,15 +183,6 @@ impl Plugin for Automata {
                 Err(_) => {}
             },
             None => panic!("ir consumer has not been initialized"),
-        }
-
-        for channel_samples in buffer.iter_samples() {
-            // Smoothing is optionally built into the parameters themselves
-            let gain = self.params.gain.smoothed.next();
-
-            for sample in channel_samples {
-                *sample *= gain;
-            }
         }
 
         ProcessStatus::Normal

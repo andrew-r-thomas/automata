@@ -82,7 +82,7 @@ pub(crate) fn create(
                 .height(Pixels(50.0))
                 .child_top(Stretch(1.0))
                 .child_bottom(Pixels(0.0));
-            Button::new(cx, |_| {}, |cx| Label::new(cx, "start"));
+            Button::new(cx, |_| {}, |cx| Label::new(cx, "start/stop"));
             Button::new(cx, |_| {}, |cx| Label::new(cx, "reset"));
         })
         .row_between(Pixels(0.0))
@@ -93,12 +93,12 @@ pub(crate) fn create(
     (cons, e)
 }
 
-pub const DEFAULT_SIZE: usize = 64;
+pub const DEFAULT_IR_SIZE: usize = 64;
 fn game_loop(gui_reciever: Receiver<GUIEvent>, mut ir_producer: Producer<Complex<f32>>) {
-    let mut alive_cells = HashSet::<(i32, i32)>::with_capacity(DEFAULT_SIZE * DEFAULT_SIZE);
+    let mut alive_cells = HashSet::<(i32, i32)>::with_capacity(DEFAULT_IR_SIZE * DEFAULT_IR_SIZE);
     let mut game_running = false;
     let mut rng = rand::thread_rng();
-    build_random(&mut alive_cells, &mut rng, DEFAULT_SIZE);
+    build_random(&mut alive_cells, &mut rng, DEFAULT_IR_SIZE);
 
     loop {
         let message = gui_reciever.try_recv();
@@ -109,7 +109,7 @@ fn game_loop(gui_reciever: Receiver<GUIEvent>, mut ir_producer: Producer<Complex
             Ok(GUIEvent::Reset) => {
                 game_running = false;
                 alive_cells.drain();
-                build_random(&mut alive_cells, &mut rng, DEFAULT_SIZE);
+                build_random(&mut alive_cells, &mut rng, DEFAULT_IR_SIZE);
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => panic!("gui disconnected from game loop"),
@@ -152,7 +152,7 @@ fn game_loop(gui_reciever: Receiver<GUIEvent>, mut ir_producer: Producer<Complex
             born.clear();
 
             let ir = build_ir(&alive_cells);
-            match ir_producer.write_chunk_uninit(DEFAULT_SIZE) {
+            match ir_producer.write_chunk_uninit(DEFAULT_IR_SIZE) {
                 Ok(chunk) => {
                     chunk.fill_from_iter(ir.into_iter());
                 }
@@ -187,10 +187,10 @@ fn build_random(board: &mut HashSet<(i32, i32)>, rng: &mut ThreadRng, size: usiz
 }
 
 fn build_ir(board: &HashSet<(i32, i32)>) -> Vec<Complex<f32>> {
-    let mut out = vec![Complex::<f32> { re: -1.0, im: -1.0 }; DEFAULT_SIZE];
+    let mut out = vec![Complex::<f32> { re: -1.0, im: -1.0 }; DEFAULT_IR_SIZE];
     for cell in board.iter() {
-        out[cell.0 as usize].re += 1 as f32 / DEFAULT_SIZE as f32;
-        out[cell.1 as usize].im += 1 as f32 / DEFAULT_SIZE as f32;
+        out[cell.0 as usize].re += 1 as f32 / DEFAULT_IR_SIZE as f32;
+        out[cell.1 as usize].im += 1 as f32 / DEFAULT_IR_SIZE as f32;
     }
     out
 }
