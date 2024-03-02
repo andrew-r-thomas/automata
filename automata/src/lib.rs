@@ -2,6 +2,8 @@ pub mod editor;
 
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
+use realfft::num_complex::Complex;
+use rtrb::*;
 use std::sync::Arc;
 
 // This is a shortened version of the gain example with most comments removed, check out
@@ -10,6 +12,8 @@ use std::sync::Arc;
 
 struct Automata {
     params: Arc<AutomataParams>,
+    ir_consumer: Option<Consumer<Complex<f32>>>,
+    current_ir: [Complex<f32>; 64],
 }
 
 #[derive(Params)]
@@ -29,6 +33,8 @@ impl Default for Automata {
     fn default() -> Self {
         Self {
             params: Arc::new(AutomataParams::default()),
+            ir_consumer: None,
+            current_ir: [Complex { re: 0.0, im: 0.0 }; 64],
         }
     }
 }
@@ -106,7 +112,9 @@ impl Plugin for Automata {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        editor::create(self.params.clone(), self.params.editor_state.clone())
+        let (prod, cons) = RingBuffer::<Complex<f32>>::new(2);
+        self.ir_consumer = Some(cons);
+        editor::create(self.params.clone(), self.params.editor_state.clone(), prod)
     }
 
     fn initialize(
@@ -132,6 +140,19 @@ impl Plugin for Automata {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        // TODO figure out how to handle panic here
+        // TODO might want to make ir a vec with capacity instead of array
+        // because of how realfft handles things
+        match self.ir_consumer.as_mut() {
+            Some(c) => match c.pop() {
+                Ok(ir) => {
+                    self.current_ir = ir;
+                }
+                Err(_) => {}
+            },
+            None => panic!("ir consumer has not been initialized"),
+        }
+
         for channel_samples in buffer.iter_samples() {
             // Smoothing is optionally built into the parameters themselves
             let gain = self.params.gain.smoothed.next();
