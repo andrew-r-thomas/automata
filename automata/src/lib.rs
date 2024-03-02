@@ -1,5 +1,6 @@
 pub mod editor;
 
+use editor::DEFAULT_SIZE;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use realfft::num_complex::Complex;
@@ -13,7 +14,7 @@ use std::sync::Arc;
 struct Automata {
     params: Arc<AutomataParams>,
     ir_consumer: Option<Consumer<Complex<f32>>>,
-    current_ir: [Complex<f32>; 64],
+    current_ir: Vec<Complex<f32>>,
 }
 
 #[derive(Params)]
@@ -34,7 +35,7 @@ impl Default for Automata {
         Self {
             params: Arc::new(AutomataParams::default()),
             ir_consumer: None,
-            current_ir: [Complex { re: 0.0, im: 0.0 }; 64],
+            current_ir: Vec::with_capacity(DEFAULT_SIZE),
         }
     }
 }
@@ -112,9 +113,9 @@ impl Plugin for Automata {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        let (prod, cons) = RingBuffer::<Complex<f32>>::new(2);
+        let (cons, e) = editor::create(self.params.clone(), self.params.editor_state.clone());
         self.ir_consumer = Some(cons);
-        editor::create(self.params.clone(), self.params.editor_state.clone(), prod)
+        e
     }
 
     fn initialize(
@@ -126,6 +127,7 @@ impl Plugin for Automata {
         // Resize buffers and perform other potentially expensive initialization operations here.
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
+        self.current_ir = Vec::with_capacity(DEFAULT_SIZE);
         true
     }
 
@@ -144,9 +146,9 @@ impl Plugin for Automata {
         // TODO might want to make ir a vec with capacity instead of array
         // because of how realfft handles things
         match self.ir_consumer.as_mut() {
-            Some(c) => match c.pop() {
+            Some(c) => match c.read_chunk(64) {
                 Ok(ir) => {
-                    self.current_ir = ir;
+                    self.current_ir = ir.into_iter().collect();
                 }
                 Err(_) => {}
             },

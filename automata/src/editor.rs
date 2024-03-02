@@ -45,18 +45,20 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
 pub(crate) fn create(
     params: Arc<AutomataParams>,
     editor_state: Arc<ViziaState>,
-    ir_producer: Producer<Vec<(i32, i32)>>,
-) -> Option<Box<dyn Editor>> {
-    create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
+) -> (Consumer<Complex<f32>>, Option<Box<dyn Editor>>) {
+    let (s, r) = mpsc::channel::<GUIEvent>();
+
+    let (prod, cons) = RingBuffer::<Complex<f32>>::new(2);
+
+    thread::spawn(move || game_loop(r, prod));
+
+    let e = create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
         assets::register_noto_sans_thin(cx);
 
-        let (s, r) = mpsc::channel::<GUIEvent>();
-        thread::spawn(move || game_loop(r, ir_producer.push(vec![(1, 1)])));
-
         Data {
             params: params.clone(),
-            game_loop_sender: s,
+            game_loop_sender: s.clone(),
             running: false,
         }
         .build(cx);
@@ -74,11 +76,13 @@ pub(crate) fn create(
         .row_between(Pixels(0.0))
         .child_left(Stretch(1.0))
         .child_right(Stretch(1.0));
-    })
+    });
+
+    (cons, e)
 }
 
-const DEFAULT_SIZE: usize = 64;
-fn game_loop(gui_reciever: Receiver<GUIEvent>, ir_producer: Producer<Vec<(i32, i32)>>) {
+pub const DEFAULT_SIZE: usize = 64;
+fn game_loop(gui_reciever: Receiver<GUIEvent>, mut ir_producer: Producer<Complex<f32>>) {
     let mut alive_cells = HashSet::<(i32, i32)>::with_capacity(DEFAULT_SIZE * DEFAULT_SIZE);
     let mut game_running = false;
     let mut rng = rand::thread_rng();
@@ -134,6 +138,16 @@ fn game_loop(gui_reciever: Receiver<GUIEvent>, ir_producer: Producer<Vec<(i32, i
             }
             dying.clear();
             born.clear();
+
+            let ir = build_ir(&alive_cells);
+            match ir_producer.write_chunk_uninit(DEFAULT_SIZE) {
+                Ok(chunk) => {
+                    chunk.fill_from_iter(ir.into_iter());
+                }
+                Err(_) => {
+                    todo!();
+                }
+            }
         }
     }
 }
@@ -149,6 +163,7 @@ fn find_neighbors(pos: &(i32, i32)) -> Vec<(i32, i32)> {
     }
     neighbors
 }
+
 fn build_random(board: &mut HashSet<(i32, i32)>, rng: &mut ThreadRng, size: usize) {
     for i in 0..size {
         for j in 0..size {
@@ -157,4 +172,13 @@ fn build_random(board: &mut HashSet<(i32, i32)>, rng: &mut ThreadRng, size: usiz
             }
         }
     }
+}
+
+fn build_ir(board: &HashSet<(i32, i32)>) -> Vec<Complex<f32>> {
+    let mut out = vec![Complex::<f32> { re: -1.0, im: -1.0 }; DEFAULT_SIZE];
+    for cell in board.iter() {
+        out[cell.0 as usize].re += 1 as f32 / DEFAULT_SIZE as f32;
+        out[cell.1 as usize].im += 1 as f32 / DEFAULT_SIZE as f32;
+    }
+    out
 }
