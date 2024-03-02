@@ -6,7 +6,7 @@ use nannou::event::Update;
 use nannou::rand::rand;
 use nannou::{App, Frame};
 
-use crate::patterns::*;
+// use crate::patterns::*;
 
 pub struct Model {
     pub alive_hash: HashSet<(i32, i32)>,

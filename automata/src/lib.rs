@@ -1,6 +1,7 @@
 pub mod editor;
 
 use nih_plug::prelude::*;
+use nih_plug_vizia::ViziaState;
 use std::sync::Arc;
 
 // This is a shortened version of the gain example with most comments removed, check out
@@ -19,6 +20,9 @@ struct AutomataParams {
     /// gain parameter is stored as linear gain while the values are displayed in decibels.
     #[id = "gain"]
     pub gain: FloatParam,
+
+    #[persist = "editor-state"]
+    editor_state: Arc<ViziaState>,
 }
 
 impl Default for Automata {
@@ -55,6 +59,7 @@ impl Default for AutomataParams {
             // `.with_step_size(0.1)` function to get internal rounding.
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
+            editor_state: editor::default_state(),
         }
     }
 }
@@ -98,6 +103,10 @@ impl Plugin for Automata {
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
+    }
+
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        editor::create(self.params.clone(), self.params.editor_state.clone())
     }
 
     fn initialize(
