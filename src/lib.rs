@@ -2,7 +2,6 @@ pub mod editor;
 
 use editor::DEFAULT_IR_SIZE;
 use nih_plug::prelude::*;
-use nih_plug::util::StftHelper;
 use nih_plug_vizia::ViziaState;
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
@@ -25,7 +24,7 @@ struct Automata {
     ifft_input: Vec<Complex<f32>>,
     ifft_output: Vec<f32>,
     // TODO figure out what the channels are like
-    output_buff: Option<Vec<[f32; 2]>>,
+    output_buff: Option<Vec<&'static mut [f32]>>,
 }
 
 #[derive(Params)]
@@ -165,37 +164,32 @@ impl Plugin for Automata {
             },
             None => panic!("ir consumer has not been initialized"),
         }
-        let raw_slice = buffer.();
+        let raw = buffer.as_slice();
 
         for channel_index in 0..buffer.channels() {
-            for chunk in 0..(raw_slice.len() / DEFAULT_IR_SIZE) {
+            // Do 0 padding
+            self.fft_input.fill(0.0);
+            self.fft_input[0..(DEFAULT_IR_SIZE / 2)].copy_from_slice(slice);
 
+            let _ = self
+                .fft
+                .as_ref()
+                .unwrap()
+                .process(&mut self.fft_input, &mut self.fft_output);
+
+            // TODO see if we can simd
+            for i in 0..self.fft_output.len() {
+                self.ifft_input[i] = self.fft_output[i] * self.current_ir[i];
             }
-            // let block_channels = block.1.into_iter();
-            // for slice in block_channels {
-            //     // Do 0 padding
-            //     self.fft_input.fill(0.0);
-            //     self.fft_input[0..(DEFAULT_IR_SIZE / 2)].copy_from_slice(slice);
 
-            //     let _ = self
-            //         .fft
-            //         .as_ref()
-            //         .unwrap()
-            //         .process(&mut self.fft_input, &mut self.fft_output);
-
-            //     // TODO see if we can simd
-            //     for i in 0..self.fft_output.len() {
-            //         self.ifft_input[i] = self.fft_output[i] * self.current_ir[i];
-            //     }
-
-            //     let _ = self
-            //         .ifft
-            //         .as_ref()
-            //         .unwrap()
-            //         .process(&mut self.ifft_input, &mut self.ifft_output);
-            // }
-            // TODO reset output buff
+            let _ = self
+                .ifft
+                .as_ref()
+                .unwrap()
+                .process(&mut self.ifft_input, &mut self.ifft_output);
         }
+
+        // TODO reset output buff
 
         ProcessStatus::Normal
     }
