@@ -1,6 +1,7 @@
+pub mod consts;
 pub mod editor;
 
-use editor::DEFAULT_IR_SIZE;
+use crate::consts::*;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use realfft::num_complex::Complex;
@@ -38,13 +39,13 @@ impl Default for Automata {
         Self {
             params: Arc::new(AutomataParams::default()),
             ir_consumer: None,
-            current_ir: Vec::with_capacity(DEFAULT_IR_SIZE),
+            current_ir: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE),
             fft: None,
             ifft: None,
-            fft_input: Vec::with_capacity(DEFAULT_IR_SIZE * 2),
-            fft_output: Vec::with_capacity(DEFAULT_IR_SIZE),
-            ifft_input: Vec::with_capacity(DEFAULT_IR_SIZE),
-            ifft_output: Vec::with_capacity(DEFAULT_IR_SIZE * 2),
+            fft_input: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE * 2),
+            fft_output: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE),
+            ifft_input: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE),
+            ifft_output: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE * 2),
             output_buff: None,
         }
     }
@@ -100,6 +101,7 @@ impl Plugin for Automata {
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        // TODO we might not want to do this in the editor funtion
         let (cons, e) = editor::create(self.params.clone(), self.params.editor_state.clone());
         self.ir_consumer = Some(cons);
         e
@@ -114,16 +116,21 @@ impl Plugin for Automata {
         // Resize buffers and perform other potentially expensive initialization operations here.
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
-        self.current_ir = Vec::with_capacity(DEFAULT_IR_SIZE);
+        self.current_ir = Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE);
+        self.current_ir.fill(Complex { re: 0.0, im: 0.0 });
 
         let mut planner = RealFftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(DEFAULT_IR_SIZE * 2);
-        let ifft = planner.plan_fft_inverse(DEFAULT_IR_SIZE * 2);
+        let fft = planner.plan_fft_forward(DEFAULT_FFT_SIZE);
+        let ifft = planner.plan_fft_inverse(DEFAULT_FFT_SIZE);
 
-        let fft_input = fft.make_input_vec();
-        let fft_output = fft.make_output_vec();
-        let ifft_input = ifft.make_input_vec();
-        let ifft_output = ifft.make_output_vec();
+        let mut fft_input = fft.make_input_vec();
+        fft_input.fill(0.0);
+        let mut fft_output = fft.make_output_vec();
+        fft_output.fill(Complex { re: 0.0, im: 0.0 });
+        let mut ifft_input = ifft.make_input_vec();
+        ifft_input.fill(Complex { re: 0.0, im: 0.0 });
+        let mut ifft_output = ifft.make_output_vec();
+        ifft_output.fill(0.0);
 
         self.fft = Some(fft);
         self.ifft = Some(ifft);
@@ -133,7 +140,7 @@ impl Plugin for Automata {
         self.ifft_output = ifft_output;
 
         self.output_buff = Some(Vec::with_capacity(
-            buffer_config.max_buffer_size as usize + DEFAULT_IR_SIZE,
+            buffer_config.max_buffer_size as usize + DEFAULT_IR_SPECTRUM_SIZE,
         ));
 
         true
@@ -154,9 +161,13 @@ impl Plugin for Automata {
         // TODO might want to make ir a vec with capacity instead of array
         // because of how realfft handles things
         match self.ir_consumer.as_mut() {
-            Some(c) => match c.read_chunk(DEFAULT_IR_SIZE) {
+            Some(c) => match c.read_chunk(DEFAULT_IR_SPECTRUM_SIZE) {
                 Ok(ir) => {
-                    self.current_ir = ir.into_iter().collect();
+                    let slices = ir.as_slices();
+                    self.current_ir[0..slices.0.len()].copy_from_slice(slices.0);
+                    self.current_ir[slices.0.len()..slices.0.len() + slices.1.len()]
+                        .copy_from_slice(slices.1);
+                    ir.commit_all();
                 }
                 Err(_) => {
                     todo!()
@@ -164,32 +175,53 @@ impl Plugin for Automata {
             },
             None => panic!("ir consumer has not been initialized"),
         }
-        let raw = buffer.as_slice();
 
-        for channel_index in 0..buffer.channels() {
-            // Do 0 padding
-            self.fft_input.fill(0.0);
-            self.fft_input[0..(DEFAULT_IR_SIZE / 2)].copy_from_slice(slice);
+        let channels = buffer.channels();
+        let mut cursor = 0;
+        for block in buffer.iter_blocks(DEFAULT_WINDOW_SIZE) {
+            let mut blocks = block.1.into_iter();
 
-            let _ = self
-                .fft
-                .as_ref()
-                .unwrap()
-                .process(&mut self.fft_input, &mut self.fft_output);
+            for channel in 0..channels {
+                let channel_block = blocks.next().unwrap();
 
-            // TODO see if we can simd
-            for i in 0..self.fft_output.len() {
-                self.ifft_input[i] = self.fft_output[i] * self.current_ir[i];
+                self.fft_input[0..DEFAULT_WINDOW_SIZE].copy_from_slice(channel_block);
+                match self
+                    .fft
+                    .as_ref()
+                    .unwrap()
+                    .process(&mut self.fft_input, &mut self.ifft_input)
+                {
+                    Ok(_) => {}
+                    Err(_) => todo!(),
+                }
+
+                // TODO simd this
+                for i in 0..self.ifft_input.len() {
+                    self.ifft_input[i] *= self.current_ir[i];
+                }
+
+                match self
+                    .ifft
+                    .as_ref()
+                    .unwrap()
+                    .process(&mut self.ifft_input, &mut self.ifft_output)
+                {
+                    Ok(_) => {}
+                    Err(_) => todo!(),
+                }
+
+                // TODO this is all kinds of slow and bad
+                for i in cursor..cursor + DEFAULT_FFT_SIZE {
+                    self.output_buff.as_mut().unwrap()[i][channel] += self.ifft_output[i];
+                }
             }
 
-            let _ = self
-                .ifft
-                .as_ref()
-                .unwrap()
-                .process(&mut self.ifft_input, &mut self.ifft_output);
+            cursor += DEFAULT_WINDOW_SIZE;
         }
 
         // TODO reset output buff
+        let out = &self.output_buff.unwrap()[0..buffer.samples()];
+        buffer.as_slice().copy_from_slice(out);
 
         ProcessStatus::Normal
     }
@@ -206,8 +238,9 @@ impl ClapPlugin for Automata {
 }
 
 impl Vst3Plugin for Automata {
-    const VST3_CLASS_ID: [u8; 16] = *b"diy!studiosatmta";
+    const VST3_CLASS_ID: [u8; 16] = *b"diy!studios_auto";
 
+    // TODO
     // And also don't forget to change these categories
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
         &[Vst3SubCategory::Fx, Vst3SubCategory::Dynamics];

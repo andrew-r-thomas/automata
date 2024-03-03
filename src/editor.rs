@@ -10,6 +10,7 @@ use std::sync::mpsc::{Receiver, Sender, TryRecvError};
 use std::sync::{mpsc, Arc};
 use std::thread;
 
+use crate::consts::*;
 use crate::AutomataParams;
 
 #[derive(Lens)]
@@ -60,7 +61,10 @@ pub(crate) fn create(
 ) -> (Consumer<Complex<f32>>, Option<Box<dyn Editor>>) {
     let (s, r) = mpsc::channel::<GUIEvent>();
 
-    let (prod, cons) = RingBuffer::<Complex<f32>>::new(2);
+    // TODO we are probably fine with this size being times 2
+    // but we will have issues if our audio thread is popping slower
+    // than our game thread pushes
+    let (prod, cons) = RingBuffer::<Complex<f32>>::new(DEFAULT_IR_SPECTRUM_SIZE * 2);
 
     thread::spawn(move || game_loop(r, prod));
 
@@ -93,12 +97,12 @@ pub(crate) fn create(
     (cons, e)
 }
 
-pub const DEFAULT_IR_SIZE: usize = 64;
 fn game_loop(gui_reciever: Receiver<GUIEvent>, mut ir_producer: Producer<Complex<f32>>) {
-    let mut alive_cells = HashSet::<(i32, i32)>::with_capacity(DEFAULT_IR_SIZE * DEFAULT_IR_SIZE);
+    let mut alive_cells =
+        HashSet::<(i32, i32)>::with_capacity(DEFAULT_IR_SPECTRUM_SIZE * DEFAULT_IR_SPECTRUM_SIZE);
     let mut game_running = false;
     let mut rng = rand::thread_rng();
-    build_random(&mut alive_cells, &mut rng, DEFAULT_IR_SIZE);
+    build_random(&mut alive_cells, &mut rng, DEFAULT_IR_SPECTRUM_SIZE);
 
     loop {
         let message = gui_reciever.try_recv();
@@ -109,7 +113,7 @@ fn game_loop(gui_reciever: Receiver<GUIEvent>, mut ir_producer: Producer<Complex
             Ok(GUIEvent::Reset) => {
                 game_running = false;
                 alive_cells.drain();
-                build_random(&mut alive_cells, &mut rng, DEFAULT_IR_SIZE);
+                build_random(&mut alive_cells, &mut rng, DEFAULT_IR_SPECTRUM_SIZE);
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => panic!("gui disconnected from game loop"),
@@ -152,7 +156,7 @@ fn game_loop(gui_reciever: Receiver<GUIEvent>, mut ir_producer: Producer<Complex
             born.clear();
 
             let ir = build_ir(&alive_cells);
-            match ir_producer.write_chunk_uninit(DEFAULT_IR_SIZE) {
+            match ir_producer.write_chunk_uninit(DEFAULT_IR_SPECTRUM_SIZE) {
                 Ok(chunk) => {
                     chunk.fill_from_iter(ir.into_iter());
                 }
@@ -187,10 +191,10 @@ fn build_random(board: &mut HashSet<(i32, i32)>, rng: &mut ThreadRng, size: usiz
 }
 
 fn build_ir(board: &HashSet<(i32, i32)>) -> Vec<Complex<f32>> {
-    let mut out = vec![Complex::<f32> { re: -1.0, im: -1.0 }; DEFAULT_IR_SIZE];
+    let mut out = vec![Complex::<f32> { re: -1.0, im: -1.0 }; DEFAULT_IR_SPECTRUM_SIZE];
     for cell in board.iter() {
-        out[cell.0 as usize].re += 1 as f32 / DEFAULT_IR_SIZE as f32;
-        out[cell.1 as usize].im += 1 as f32 / DEFAULT_IR_SIZE as f32;
+        out[cell.0 as usize].re += 1 as f32 / DEFAULT_IR_SPECTRUM_SIZE as f32;
+        out[cell.1 as usize].im += 1 as f32 / DEFAULT_IR_SPECTRUM_SIZE as f32;
     }
     out
 }

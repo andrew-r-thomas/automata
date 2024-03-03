@@ -1,0 +1,3 @@
+pub const DEFAULT_IR_SPECTRUM_SIZE: usize = 64 + 1;
+pub const DEFAULT_WINDOW_SIZE: usize = DEFAULT_IR_SPECTRUM_SIZE;
+pub const DEFAULT_FFT_SIZE: usize = 2 * DEFAULT_WINDOW_SIZE;
