@@ -2,6 +2,7 @@ pub mod editor;
 
 use editor::DEFAULT_IR_SIZE;
 use nih_plug::prelude::*;
+use nih_plug::util::StftHelper;
 use nih_plug_vizia::ViziaState;
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
@@ -15,6 +16,7 @@ use std::sync::Arc;
 struct Automata {
     params: Arc<AutomataParams>,
     ir_consumer: Option<Consumer<Complex<f32>>>,
+    // TODO might want to replace vecs with arrays
     current_ir: Vec<Complex<f32>>,
     fft: Option<Arc<dyn RealToComplex<f32>>>,
     ifft: Option<Arc<dyn ComplexToReal<f32>>>,
@@ -22,17 +24,12 @@ struct Automata {
     fft_output: Vec<Complex<f32>>,
     ifft_input: Vec<Complex<f32>>,
     ifft_output: Vec<f32>,
+    // TODO figure out what the channels are like
+    output_buff: Option<Vec<[f32; 2]>>,
 }
 
 #[derive(Params)]
 struct AutomataParams {
-    /// The parameter's ID is used to identify the parameter in the wrappred plugin API. As long as
-    /// these IDs remain constant, you can rename and reorder these fields as you wish. The
-    /// parameters are exposed to the host in the same order they were defined. In this case, this
-    /// gain parameter is stored as linear gain while the values are displayed in decibels.
-    #[id = "gain"]
-    pub gain: FloatParam,
-
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
 }
@@ -49,6 +46,7 @@ impl Default for Automata {
             fft_output: Vec::with_capacity(DEFAULT_IR_SIZE),
             ifft_input: Vec::with_capacity(DEFAULT_IR_SIZE),
             ifft_output: Vec::with_capacity(DEFAULT_IR_SIZE * 2),
+            output_buff: None,
         }
     }
 }
@@ -56,29 +54,6 @@ impl Default for Automata {
 impl Default for AutomataParams {
     fn default() -> Self {
         Self {
-            // This gain is stored as linear gain. NIH-plug comes with useful conversion functions
-            // to treat these kinds of parameters as if we were dealing with decibels. Storing this
-            // as decibels is easier to work with, but requires a conversion for every sample.
-            gain: FloatParam::new(
-                "Gain",
-                util::db_to_gain(0.0),
-                FloatRange::Skewed {
-                    min: util::db_to_gain(-30.0),
-                    max: util::db_to_gain(30.0),
-                    // This makes the range appear as if it was linear when displaying the values as
-                    // decibels
-                    factor: FloatRange::gain_skew_factor(-30.0, 30.0),
-                },
-            )
-            // Because the gain parameter is stored as linear gain instead of storing the value as
-            // decibels, we need logarithmic smoothing
-            .with_smoother(SmoothingStyle::Logarithmic(50.0))
-            .with_unit(" dB")
-            // There are many predefined formatters we can use here. If the gain was stored as
-            // decibels instead of as a linear gain value, we could have also used the
-            // `.with_step_size(0.1)` function to get internal rounding.
-            .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
-            .with_string_to_value(formatters::s2v_f32_gain_to_db()),
             editor_state: editor::default_state(),
         }
     }
@@ -134,7 +109,7 @@ impl Plugin for Automata {
     fn initialize(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
-        _buffer_config: &BufferConfig,
+        buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
         // Resize buffers and perform other potentially expensive initialization operations here.
@@ -158,6 +133,10 @@ impl Plugin for Automata {
         self.ifft_input = ifft_input;
         self.ifft_output = ifft_output;
 
+        self.output_buff = Some(Vec::with_capacity(
+            buffer_config.max_buffer_size as usize + DEFAULT_IR_SIZE,
+        ));
+
         true
     }
 
@@ -176,13 +155,46 @@ impl Plugin for Automata {
         // TODO might want to make ir a vec with capacity instead of array
         // because of how realfft handles things
         match self.ir_consumer.as_mut() {
-            Some(c) => match c.read_chunk(64) {
+            Some(c) => match c.read_chunk(DEFAULT_IR_SIZE) {
                 Ok(ir) => {
                     self.current_ir = ir.into_iter().collect();
                 }
-                Err(_) => {}
+                Err(_) => {
+                    todo!()
+                }
             },
             None => panic!("ir consumer has not been initialized"),
+        }
+        let raw_slice = buffer.();
+
+        for channel_index in 0..buffer.channels() {
+            for chunk in 0..(raw_slice.len() / DEFAULT_IR_SIZE) {
+
+            }
+            // let block_channels = block.1.into_iter();
+            // for slice in block_channels {
+            //     // Do 0 padding
+            //     self.fft_input.fill(0.0);
+            //     self.fft_input[0..(DEFAULT_IR_SIZE / 2)].copy_from_slice(slice);
+
+            //     let _ = self
+            //         .fft
+            //         .as_ref()
+            //         .unwrap()
+            //         .process(&mut self.fft_input, &mut self.fft_output);
+
+            //     // TODO see if we can simd
+            //     for i in 0..self.fft_output.len() {
+            //         self.ifft_input[i] = self.fft_output[i] * self.current_ir[i];
+            //     }
+
+            //     let _ = self
+            //         .ifft
+            //         .as_ref()
+            //         .unwrap()
+            //         .process(&mut self.ifft_input, &mut self.ifft_output);
+            // }
+            // TODO reset output buff
         }
 
         ProcessStatus::Normal
