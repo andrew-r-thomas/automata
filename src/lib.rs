@@ -25,7 +25,7 @@ struct Automata {
     ifft_input: Vec<Complex<f32>>,
     ifft_output: Vec<f32>,
     // TODO figure out what the channels are like
-    output_buff: Option<Vec<&'static mut [f32]>>,
+    output_buff: Vec<Vec<f32>>,
 }
 
 #[derive(Params)]
@@ -46,7 +46,10 @@ impl Default for Automata {
             fft_output: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE),
             ifft_input: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE),
             ifft_output: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE * 2),
-            output_buff: None,
+            output_buff: vec![
+                Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE + 512),
+                Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE + 512),
+            ],
         }
     }
 }
@@ -109,7 +112,7 @@ impl Plugin for Automata {
 
     fn initialize(
         &mut self,
-        _audio_io_layout: &AudioIOLayout,
+        audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
@@ -139,9 +142,12 @@ impl Plugin for Automata {
         self.ifft_input = ifft_input;
         self.ifft_output = ifft_output;
 
-        self.output_buff = Some(Vec::with_capacity(
-            buffer_config.max_buffer_size as usize + DEFAULT_IR_SPECTRUM_SIZE,
-        ));
+        self.output_buff = vec![
+            Vec::with_capacity(
+                buffer_config.max_buffer_size as usize + DEFAULT_IR_SPECTRUM_SIZE
+            );
+            2
+        ];
 
         true
     }
@@ -212,11 +218,10 @@ impl Plugin for Automata {
 
                 // TODO this is all kinds of slow and bad
                 for i in cursor..cursor + DEFAULT_FFT_SIZE {
-                    self.output_buff.as_mut().unwrap()[i][channel] += self.ifft_output[i];
+                    self.output_buff[channel][i] += self.ifft_output[i];
                 }
                 channel_block.copy_from_slice(
-                    self.output_buff.as_mut().unwrap()[cursor..cursor + DEFAULT_WINDOW_SIZE]
-                        [channel],
+                    &self.output_buff[channel][cursor..cursor + DEFAULT_WINDOW_SIZE],
                 )
             }
 
@@ -225,9 +230,10 @@ impl Plugin for Automata {
 
         // TODO reset output buff
         // i think we might have to write into the blocks directly
-        let mut out = self.output_buff.as_mut().unwrap();
-        out.rotate_right(DEFAULT_IR_SPECTRUM_SIZE);
-        out[DEFAULT_IR_SPECTRUM_SIZE..].fill(&[0.0]);
+        for i in 0..2 {
+            self.output_buff[i].rotate_right(DEFAULT_IR_SPECTRUM_SIZE);
+            self.output_buff[i][DEFAULT_IR_SPECTRUM_SIZE..].fill(0.0);
+        }
 
         ProcessStatus::Normal
     }
