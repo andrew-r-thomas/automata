@@ -167,7 +167,7 @@ impl Plugin for Automata {
                     self.current_ir[0..slices.0.len()].copy_from_slice(slices.0);
                     self.current_ir[slices.0.len()..slices.0.len() + slices.1.len()]
                         .copy_from_slice(slices.1);
-                    ir.commit_all();
+                    ir.commit_all()
                 }
                 Err(_) => {
                     todo!()
@@ -214,14 +214,20 @@ impl Plugin for Automata {
                 for i in cursor..cursor + DEFAULT_FFT_SIZE {
                     self.output_buff.as_mut().unwrap()[i][channel] += self.ifft_output[i];
                 }
+                channel_block.copy_from_slice(
+                    self.output_buff.as_mut().unwrap()[cursor..cursor + DEFAULT_WINDOW_SIZE]
+                        [channel],
+                )
             }
 
             cursor += DEFAULT_WINDOW_SIZE;
         }
 
         // TODO reset output buff
-        let out = &self.output_buff.unwrap()[0..buffer.samples()];
-        buffer.as_slice().copy_from_slice(out);
+        // i think we might have to write into the blocks directly
+        let mut out = self.output_buff.as_mut().unwrap();
+        out.rotate_right(DEFAULT_IR_SPECTRUM_SIZE);
+        out[DEFAULT_IR_SPECTRUM_SIZE..].fill(&[0.0]);
 
         ProcessStatus::Normal
     }
