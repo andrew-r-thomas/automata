@@ -9,10 +9,6 @@ use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rtrb::*;
 use std::sync::Arc;
 
-// This is a shortened version of the gain example with most comments removed, check out
-// https://github.com/robbert-vdh/nih-plug/blob/master/plugins/examples/gain/src/lib.rs to get
-// started
-
 struct Automata {
     params: Arc<AutomataParams>,
     ir_consumer: Option<Consumer<Complex<f32>>>,
@@ -24,7 +20,6 @@ struct Automata {
     fft_output: Vec<Complex<f32>>,
     ifft_input: Vec<Complex<f32>>,
     ifft_output: Vec<f32>,
-    // TODO figure out what the channels are like
     output_buff: Vec<Vec<f32>>,
 }
 
@@ -112,7 +107,7 @@ impl Plugin for Automata {
 
     fn initialize(
         &mut self,
-        audio_io_layout: &AudioIOLayout,
+        _audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
@@ -164,8 +159,6 @@ impl Plugin for Automata {
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         // TODO figure out how to handle panic here
-        // TODO might want to make ir a vec with capacity instead of array
-        // because of how realfft handles things
         match self.ir_consumer.as_mut() {
             Some(c) => match c.read_chunk(DEFAULT_IR_SPECTRUM_SIZE) {
                 Ok(ir) => {
@@ -228,8 +221,6 @@ impl Plugin for Automata {
             cursor += DEFAULT_WINDOW_SIZE;
         }
 
-        // TODO reset output buff
-        // i think we might have to write into the blocks directly
         for i in 0..2 {
             self.output_buff[i].rotate_right(DEFAULT_IR_SPECTRUM_SIZE);
             self.output_buff[i][DEFAULT_IR_SPECTRUM_SIZE..].fill(0.0);

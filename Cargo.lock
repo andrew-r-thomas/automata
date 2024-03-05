@@ -420,6 +420,7 @@ dependencies = [
  "rand 0.8.5",
  "realfft",
  "rtrb",
+ "xtask",
 ]
 
 [[package]]
