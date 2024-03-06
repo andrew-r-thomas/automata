@@ -172,7 +172,7 @@ impl Plugin for Automata {
                     todo!()
                 }
             },
-            None => panic!("ir consumer has not been initialized"),
+            None => return ProcessStatus::Normal,
         }
 
         let channels = buffer.channels();
@@ -226,6 +226,7 @@ impl Plugin for Automata {
             self.output_buff[i][DEFAULT_IR_SPECTRUM_SIZE..].fill(0.0);
         }
 
+        // TODO do process status stuff for reverb tail
         ProcessStatus::Normal
     }
 }
