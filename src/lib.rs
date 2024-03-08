@@ -7,12 +7,13 @@ use nih_plug_vizia::ViziaState;
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rtrb::*;
+use std::borrow::Borrow;
+use std::error::Error;
 use std::sync::Arc;
 
 struct Automata {
     params: Arc<AutomataParams>,
     ir_consumer: Option<Consumer<Complex<f32>>>,
-    // TODO might want to replace vecs with arrays
     current_ir: Vec<Complex<f32>>,
     fft: Option<Arc<dyn RealToComplex<f32>>>,
     ifft: Option<Arc<dyn ComplexToReal<f32>>>,
@@ -168,8 +169,10 @@ impl Plugin for Automata {
                         .copy_from_slice(slices.1);
                     ir.commit_all()
                 }
-                Err(_) => {
-                    todo!()
+                Err(e) => {
+                    let message = e.to_string();
+                    let message_str = message.borrow().as_str();
+                    return ProcessStatus::Error(message_str);
                 }
             },
             None => return ProcessStatus::Normal,
