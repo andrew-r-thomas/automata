@@ -7,8 +7,6 @@ use nih_plug_vizia::ViziaState;
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rtrb::*;
-use std::borrow::Borrow;
-use std::error::Error;
 use std::sync::Arc;
 
 struct Automata {
@@ -170,9 +168,7 @@ impl Plugin for Automata {
                     ir.commit_all()
                 }
                 Err(e) => {
-                    let message = e.to_string();
-                    let message_str = message.borrow().as_str();
-                    return ProcessStatus::Error(message_str);
+                    nih_dbg!(e);
                 }
             },
             None => return ProcessStatus::Normal,
@@ -234,6 +230,7 @@ impl Plugin for Automata {
     }
 }
 
+// NOTE just testing this
 impl ClapPlugin for Automata {
     const CLAP_ID: &'static str = "com.diy!studios.automata";
     const CLAP_DESCRIPTION: Option<&'static str> = Some("A short description of your plugin");
