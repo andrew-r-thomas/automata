@@ -2,12 +2,15 @@ pub mod consts;
 pub mod editor;
 
 use crate::consts::*;
+
+use std::env::set_var;
+use std::sync::Arc;
+
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rtrb::*;
-use std::sync::Arc;
 
 struct Automata {
     params: Arc<AutomataParams>,
@@ -30,6 +33,9 @@ struct AutomataParams {
 
 impl Default for Automata {
     fn default() -> Self {
+        set_var("NIH_LOG", "~/dev/diy!/automata/log.md");
+        nih_log!("we are making default plugin");
+
         Self {
             params: Arc::new(AutomataParams::default()),
             ir_consumer: None,
@@ -97,12 +103,13 @@ impl Plugin for Automata {
         self.params.clone()
     }
 
-    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        // TODO we might not want to do this in the editor funtion
-        let (cons, e) = editor::create(self.params.clone(), self.params.editor_state.clone());
-        self.ir_consumer = Some(cons);
-        e
-    }
+    // fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+    //     // TODO we might not want to do this in the editor funtion
+    //     nih_log!("we are trying to make editor");
+    //     let (cons, e) = editor::create(self.params.clone(), self.params.editor_state.clone());
+    //     self.ir_consumer = Some(cons);
+    //     e
+    // }
 
     fn initialize(
         &mut self,
@@ -110,6 +117,8 @@ impl Plugin for Automata {
         buffer_config: &BufferConfig,
         _context: &mut impl InitContext<Self>,
     ) -> bool {
+        nih_log!("initializing");
+
         // Resize buffers and perform other potentially expensive initialization operations here.
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
@@ -157,6 +166,8 @@ impl Plugin for Automata {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        nih_log!("doing a process block");
+
         // TODO figure out how to handle panic here
         match self.ir_consumer.as_mut() {
             Some(c) => match c.read_chunk(DEFAULT_IR_SPECTRUM_SIZE) {
@@ -168,10 +179,13 @@ impl Plugin for Automata {
                     ir.commit_all()
                 }
                 Err(e) => {
-                    nih_dbg!(e);
+                    nih_log!("{}", e);
                 }
             },
-            None => return ProcessStatus::Normal,
+            None => {
+                nih_log!("no ir buff");
+                return ProcessStatus::Normal;
+            }
         }
 
         let channels = buffer.channels();

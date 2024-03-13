@@ -6,9 +6,9 @@ use rand::Rng;
 use realfft::num_complex::Complex;
 use rtrb::*;
 use std::collections::HashSet;
-use std::sync::mpsc::{Receiver, Sender, TryRecvError};
-use std::sync::{mpsc, Arc};
-use std::thread;
+use std::sync::mpsc::{Receiver, TryRecvError};
+use std::sync::Arc;
+// use std::thread;
 
 use crate::consts::*;
 use crate::AutomataParams;
@@ -16,7 +16,7 @@ use crate::AutomataParams;
 #[derive(Lens)]
 struct Data {
     params: Arc<AutomataParams>,
-    game_loop_sender: Sender<GUIEvent>,
+    // game_loop_sender: Sender<GUIEvent>,
     running: bool,
 }
 
@@ -30,21 +30,21 @@ impl Model for Data {
         event.map(|gui_event: &GUIEvent, _| match gui_event {
             GUIEvent::PlayPause => {
                 self.running = !self.running;
-                match self.game_loop_sender.send(GUIEvent::PlayPause) {
-                    Ok(_) => {}
-                    Err(_) => {
-                        todo!()
-                    }
-                }
+                // match self.game_loop_sender.send(GUIEvent::PlayPause) {
+                //     Ok(_) => {}
+                //     Err(_) => {
+                //         todo!()
+                //     }
+                // }
             }
             GUIEvent::Reset => {
                 self.running = false;
-                match self.game_loop_sender.send(GUIEvent::Reset) {
-                    Ok(_) => {}
-                    Err(_) => {
-                        todo!()
-                    }
-                }
+                // match self.game_loop_sender.send(GUIEvent::Reset) {
+                //     Ok(_) => {}
+                //     Err(_) => {
+                //         todo!()
+                //     }
+                // }
             }
         });
     }
@@ -58,15 +58,15 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
 pub(crate) fn create(
     params: Arc<AutomataParams>,
     editor_state: Arc<ViziaState>,
-) -> (Consumer<Complex<f32>>, Option<Box<dyn Editor>>) {
-    let (s, r) = mpsc::channel::<GUIEvent>();
+) -> Option<Box<dyn Editor>> {
+    // let (s, r) = mpsc::channel::<GUIEvent>();
 
     // TODO we are probably fine with this size being times 2
     // but we will have issues if our audio thread is popping slower
     // than our game thread pushes
-    let (prod, cons) = RingBuffer::<Complex<f32>>::new(DEFAULT_IR_SPECTRUM_SIZE * 2);
+    // let (prod, cons) = RingBuffer::<Complex<f32>>::new(DEFAULT_IR_SPECTRUM_SIZE * 2);
 
-    thread::spawn(move || game_loop(r, prod));
+    // thread::spawn(move || game_loop(r, prod));
 
     let e = create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
@@ -74,7 +74,7 @@ pub(crate) fn create(
 
         Data {
             params: params.clone(),
-            game_loop_sender: s.clone(),
+            // game_loop_sender: s.clone(),
             running: false,
         }
         .build(cx);
@@ -94,7 +94,8 @@ pub(crate) fn create(
         .child_right(Stretch(1.0));
     });
 
-    (cons, e)
+    // (cons, e)
+    e
 }
 
 fn game_loop(gui_reciever: Receiver<GUIEvent>, mut ir_producer: Producer<Complex<f32>>) {

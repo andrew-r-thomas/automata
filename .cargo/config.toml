@@ -1,0 +1,5 @@
+[alias]
+xtask = "run --package xtask --release --"
+
+[env]
+NIH_LOG = {value = "../log.md", relative = true}
