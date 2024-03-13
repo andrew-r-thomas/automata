@@ -103,13 +103,13 @@ impl Plugin for Automata {
         self.params.clone()
     }
 
-    // fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-    //     // TODO we might not want to do this in the editor funtion
-    //     nih_log!("we are trying to make editor");
-    //     let (cons, e) = editor::create(self.params.clone(), self.params.editor_state.clone());
-    //     self.ir_consumer = Some(cons);
-    //     e
-    // }
+    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        // TODO we might not want to do this in the editor funtion
+        nih_log!("we are trying to make editor");
+        let e = editor::create(self.params.clone(), self.params.editor_state.clone());
+        // self.ir_consumer = Some(cons);
+        e
+    }
 
     fn initialize(
         &mut self,
