@@ -127,14 +127,14 @@ impl Plugin for Automata {
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
         self.current_ir = Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE);
-        // self.current_ir.fill(Complex { re: 0.0, im: 0.0 });
+        self.current_ir.fill(Complex { re: 0.0, im: 0.0 });
 
         let mut planner = RealFftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(DEFAULT_FFT_SIZE);
         let ifft = planner.plan_fft_inverse(DEFAULT_FFT_SIZE);
 
         let mut fft_input = fft.make_input_vec();
-        fft_input[0..DEFAULT_FFT_SIZE].copy_from_slice(&SMOOVE);
+        fft_input[0..DEFAULT_WINDOW_SIZE].copy_from_slice(&SMOOVE);
         let _ = fft.process(&mut fft_input, &mut self.current_ir);
 
         fft_input.fill(0.0);
@@ -198,12 +198,14 @@ impl Plugin for Automata {
         let channels = buffer.channels();
         let mut cursor = 0;
         for block in buffer.iter_blocks(DEFAULT_WINDOW_SIZE) {
+            let block_len = block.1.samples();
             let mut blocks = block.1.into_iter();
 
             for channel in 0..channels {
                 let channel_block = blocks.next().unwrap();
+                // NOTE the len of our blocks can be different from default window size
 
-                self.fft_input[0..DEFAULT_WINDOW_SIZE].copy_from_slice(channel_block);
+                self.fft_input[0..block_len].copy_from_slice(channel_block);
                 match self
                     .fft
                     .as_ref()
@@ -215,7 +217,7 @@ impl Plugin for Automata {
                 }
 
                 // TODO simd this
-                for i in 0..self.ifft_input.len() {
+                for i in 0..self.current_ir.len().min(self.ifft_input.len()) {
                     self.ifft_input[i] *= self.current_ir[i];
                 }
 
@@ -230,23 +232,22 @@ impl Plugin for Automata {
                 }
 
                 // TODO this is all kinds of slow and bad
-                for i in cursor..cursor + DEFAULT_FFT_SIZE {
-                    self.output_buff[channel][i] += self.ifft_output[i];
-                }
-                channel_block.copy_from_slice(
-                    &self.output_buff[channel][cursor..cursor + DEFAULT_WINDOW_SIZE],
-                )
+                //     for i in cursor..cursor + self.ifft_output.len() {
+                //         self.output_buff[channel][i] += self.ifft_output[i];
+                //     }
+                //     channel_block
+                //         .copy_from_slice(&self.output_buff[channel][cursor..cursor + block_len])
             }
 
-            cursor += DEFAULT_WINDOW_SIZE;
+            // cursor += block_len;
         }
 
-        for i in 0..2 {
-            self.output_buff[i].rotate_right(DEFAULT_IR_SPECTRUM_SIZE);
-            self.output_buff[i][DEFAULT_IR_SPECTRUM_SIZE..].fill(0.0);
-        }
+        // for i in 0..2 {
+        //     self.output_buff[i].rotate_right(DEFAULT_IR_SPECTRUM_SIZE);
+        //     self.output_buff[i][DEFAULT_IR_SPECTRUM_SIZE..].fill(0.0);
+        // }
 
-        // TODO do process status stuff for reverb tail
+        // // TODO do process status stuff for reverb tail
         ProcessStatus::Normal
     }
 }
