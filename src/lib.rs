@@ -1,3 +1,7 @@
+// TODO so its not the threads that are the issue
+// its something to do with how the ffts are done,
+// maybe the sizes?
+
 pub mod consts;
 pub mod editor;
 
@@ -123,13 +127,16 @@ impl Plugin for Automata {
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
         self.current_ir = Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE);
-        self.current_ir.fill(Complex { re: 0.0, im: 0.0 });
+        // self.current_ir.fill(Complex { re: 0.0, im: 0.0 });
 
         let mut planner = RealFftPlanner::<f32>::new();
         let fft = planner.plan_fft_forward(DEFAULT_FFT_SIZE);
         let ifft = planner.plan_fft_inverse(DEFAULT_FFT_SIZE);
 
         let mut fft_input = fft.make_input_vec();
+        fft_input[0..DEFAULT_FFT_SIZE].copy_from_slice(&SMOOVE);
+        let _ = fft.process(&mut fft_input, &mut self.current_ir);
+
         fft_input.fill(0.0);
         let mut fft_output = fft.make_output_vec();
         fft_output.fill(Complex { re: 0.0, im: 0.0 });
@@ -169,24 +176,24 @@ impl Plugin for Automata {
         nih_log!("doing a process block");
 
         // TODO figure out how to handle panic here
-        match self.ir_consumer.as_mut() {
-            Some(c) => match c.read_chunk(DEFAULT_IR_SPECTRUM_SIZE) {
-                Ok(ir) => {
-                    let slices = ir.as_slices();
-                    self.current_ir[0..slices.0.len()].copy_from_slice(slices.0);
-                    self.current_ir[slices.0.len()..slices.0.len() + slices.1.len()]
-                        .copy_from_slice(slices.1);
-                    ir.commit_all()
-                }
-                Err(e) => {
-                    nih_log!("{}", e);
-                }
-            },
-            None => {
-                nih_log!("no ir buff");
-                return ProcessStatus::Normal;
-            }
-        }
+        // match self.ir_consumer.as_mut() {
+        //     Some(c) => match c.read_chunk(DEFAULT_IR_SPECTRUM_SIZE) {
+        //         Ok(ir) => {
+        //             let slices = ir.as_slices();
+        //             self.current_ir[0..slices.0.len()].copy_from_slice(slices.0);
+        //             self.current_ir[slices.0.len()..slices.0.len() + slices.1.len()]
+        //                 .copy_from_slice(slices.1);
+        //             ir.commit_all()
+        //         }
+        //         Err(e) => {
+        //             nih_log!("{}", e);
+        //         }
+        //     },
+        //     None => {
+        //         nih_log!("no ir buff");
+        //         return ProcessStatus::Normal;
+        //     }
+        // }
 
         let channels = buffer.channels();
         let mut cursor = 0;
