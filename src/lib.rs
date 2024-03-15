@@ -1,12 +1,16 @@
-// TODO so its not the threads that are the issue
-// its something to do with how the ffts are done,
-// maybe the sizes?
+// TODO for some reason we are crashing when using the
+// game board, it's probably some sizing stuff being wrong
+// because we are trying to fit the spectrum into the filter
+// and doing it incorrectly
+// it could also be not doing the normalizing, which
+// probably should be done game side
 
-pub mod consts;
 pub mod editor;
 
+use std::collections::HashSet;
 use std::sync::Arc;
 
+use editor::{build_ir, build_random};
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use realfft::num_complex::Complex;
@@ -15,6 +19,7 @@ use rtrb::*;
 
 const WINDOW_SIZE: usize = 64;
 const FILTER_WINDOW_SIZE: usize = 33;
+const GAME_BOARD_SIZE: usize = (FFT_WINDOW_SIZE / 2) + 1;
 pub const SMOOVE: [f32; FILTER_WINDOW_SIZE] =
     [1 as f32 / FILTER_WINDOW_SIZE as f32; FILTER_WINDOW_SIZE];
 const FFT_WINDOW_SIZE: usize = WINDOW_SIZE + FILTER_WINDOW_SIZE + 1;
@@ -24,7 +29,7 @@ const GAIN_COMP: f32 = 1.0 / FFT_WINDOW_SIZE as f32;
 struct Automata {
     params: Arc<AutomataParams>,
 
-    ir_consumer: Option<Consumer<Complex<f32>>>,
+    _ir_consumer: Option<Consumer<Complex<f32>>>,
     current_ir: Vec<Complex<f32>>,
 
     fft: Arc<dyn RealToComplex<f32>>,
@@ -47,19 +52,19 @@ impl Default for Automata {
         let real_to_complex = planner.plan_fft_forward(FFT_WINDOW_SIZE);
         let complex_to_real = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
 
-        let mut real_buff = real_to_complex.make_input_vec();
         let mut comp_buff = real_to_complex.make_output_vec();
 
-        real_buff[0..FILTER_WINDOW_SIZE].copy_from_slice(&SMOOVE);
-
-        real_to_complex
-            .process_with_scratch(&mut real_buff, &mut comp_buff, &mut [])
-            .unwrap();
+        let mut alive_cells =
+            HashSet::<(i32, i32)>::with_capacity(GAME_BOARD_SIZE * GAME_BOARD_SIZE);
+        let mut rng = rand::thread_rng();
+        build_random(&mut alive_cells, &mut rng, GAME_BOARD_SIZE);
+        let ir = build_ir(&alive_cells, GAME_BOARD_SIZE);
+        comp_buff[0..GAME_BOARD_SIZE].copy_from_slice(&ir);
 
         Self {
             params: Arc::new(AutomataParams::default()),
 
-            ir_consumer: None,
+            _ir_consumer: None,
             current_ir: comp_buff.clone(),
 
             fft: real_to_complex,
@@ -132,7 +137,7 @@ impl Plugin for Automata {
     fn initialize(
         &mut self,
         _audio_io_layout: &AudioIOLayout,
-        buffer_config: &BufferConfig,
+        _buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
         nih_log!("initializing");
