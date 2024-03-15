@@ -128,45 +128,14 @@ impl Plugin for Automata {
         &mut self,
         _audio_io_layout: &AudioIOLayout,
         buffer_config: &BufferConfig,
-        _context: &mut impl InitContext<Self>,
+        context: &mut impl InitContext<Self>,
     ) -> bool {
         nih_log!("initializing");
 
         // Resize buffers and perform other potentially expensive initialization operations here.
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
-        self.current_ir = Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE);
-        self.current_ir.fill(Complex { re: 0.0, im: 0.0 });
-
-        let mut planner = RealFftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(DEFAULT_FFT_SIZE);
-        let ifft = planner.plan_fft_inverse(DEFAULT_FFT_SIZE);
-
-        let mut fft_input = fft.make_input_vec();
-        fft_input[0..DEFAULT_WINDOW_SIZE].copy_from_slice(&SMOOVE);
-        let _ = fft.process(&mut fft_input, &mut self.current_ir);
-
-        fft_input.fill(0.0);
-        let mut fft_output = fft.make_output_vec();
-        fft_output.fill(Complex { re: 0.0, im: 0.0 });
-        let mut ifft_input = ifft.make_input_vec();
-        ifft_input.fill(Complex { re: 0.0, im: 0.0 });
-        let mut ifft_output = ifft.make_output_vec();
-        ifft_output.fill(0.0);
-
-        self.fft = Some(fft);
-        self.ifft = Some(ifft);
-        self.fft_input = fft_input;
-        self.fft_output = fft_output;
-        self.ifft_input = ifft_input;
-        self.ifft_output = ifft_output;
-
-        self.output_buff = vec![
-            Vec::with_capacity(
-                buffer_config.max_buffer_size as usize + DEFAULT_IR_SPECTRUM_SIZE
-            );
-            2
-        ];
+        context.set_latency_samples(self.stft.latency_samples() + (FILTER_WINDOW_SIZE as u32 / 2));
 
         true
     }
@@ -174,6 +143,8 @@ impl Plugin for Automata {
     fn reset(&mut self) {
         // Reset buffers and envelopes here. This can be called from the audio thread and may not
         // allocate. You can remove this function if you do not need it.
+
+        self.stft.set_block_size(WINDOW_SIZE);
     }
 
     fn process(
@@ -204,57 +175,20 @@ impl Plugin for Automata {
         //     }
         // }
 
-        let channels = buffer.channels();
-        let mut cursor = 0;
-        for block in buffer.iter_blocks(DEFAULT_WINDOW_SIZE) {
-            let block_len = block.1.samples();
-            let mut blocks = block.1.into_iter();
+        self.stft
+            .process_overlap_add(buffer, 1, |_channel, real_buff| {
+                self.fft
+                    .process_with_scratch(real_buff, &mut self.comp_buff, &mut [])
+                    .unwrap();
 
-            for channel in 0..channels {
-                let channel_block = blocks.next().unwrap();
-                // NOTE the len of our blocks can be different from default window size
-
-                self.fft_input[0..block_len].copy_from_slice(channel_block);
-                match self
-                    .fft
-                    .as_ref()
-                    .unwrap()
-                    .process(&mut self.fft_input, &mut self.ifft_input)
-                {
-                    Ok(_) => {}
-                    Err(_) => todo!(),
+                for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.current_ir) {
+                    *fft_bin *= *kernel_bin * GAIN_COMP;
                 }
 
-                // TODO simd this
-                for i in 0..self.current_ir.len().min(self.ifft_input.len()) {
-                    self.ifft_input[i] *= self.current_ir[i];
-                }
-
-                match self
-                    .ifft
-                    .as_ref()
-                    .unwrap()
-                    .process(&mut self.ifft_input, &mut self.ifft_output)
-                {
-                    Ok(_) => {}
-                    Err(_) => todo!(),
-                }
-
-                // TODO this is all kinds of slow and bad
-                //     for i in cursor..cursor + self.ifft_output.len() {
-                //         self.output_buff[channel][i] += self.ifft_output[i];
-                //     }
-                //     channel_block
-                //         .copy_from_slice(&self.output_buff[channel][cursor..cursor + block_len])
-            }
-
-            // cursor += block_len;
-        }
-
-        // for i in 0..2 {
-        //     self.output_buff[i].rotate_right(DEFAULT_IR_SPECTRUM_SIZE);
-        //     self.output_buff[i][DEFAULT_IR_SPECTRUM_SIZE..].fill(0.0);
-        // }
+                self.ifft
+                    .process_with_scratch(&mut self.comp_buff, real_buff, &mut [])
+                    .unwrap();
+            });
 
         // // TODO do process status stuff for reverb tail
         ProcessStatus::Normal
