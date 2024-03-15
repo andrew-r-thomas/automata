@@ -5,9 +5,6 @@
 pub mod consts;
 pub mod editor;
 
-use crate::consts::*;
-
-use std::env::set_var;
 use std::sync::Arc;
 
 use nih_plug::prelude::*;
@@ -15,6 +12,14 @@ use nih_plug_vizia::ViziaState;
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rtrb::*;
+
+const WINDOW_SIZE: usize = 64;
+const FILTER_WINDOW_SIZE: usize = 33;
+pub const SMOOVE: [f32; FILTER_WINDOW_SIZE] =
+    [1 as f32 / FILTER_WINDOW_SIZE as f32; FILTER_WINDOW_SIZE];
+const FFT_WINDOW_SIZE: usize = WINDOW_SIZE + FILTER_WINDOW_SIZE + 1;
+
+const GAIN_COMP: f32 = 1.0 / FFT_WINDOW_SIZE as f32;
 
 struct Automata {
     params: Arc<AutomataParams>,
@@ -38,8 +43,6 @@ struct AutomataParams {
 
 impl Default for Automata {
     fn default() -> Self {
-        set_var("NIH_LOG", "~/dev/diy!/automata/log.md");
-        nih_log!("we are making default plugin");
         let mut planner = RealFftPlanner::new();
         let real_to_complex = planner.plan_fft_forward(FFT_WINDOW_SIZE);
         let complex_to_real = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
@@ -49,7 +52,9 @@ impl Default for Automata {
 
         real_buff[0..FILTER_WINDOW_SIZE].copy_from_slice(&SMOOVE);
 
-        real_to_complex.process_with_scratch(&mut real_buff, &mut comp_buff, &mut []);
+        real_to_complex
+            .process_with_scratch(&mut real_buff, &mut comp_buff, &mut [])
+            .unwrap();
 
         Self {
             params: Arc::new(AutomataParams::default()),
