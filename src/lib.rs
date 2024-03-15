@@ -46,6 +46,22 @@ struct AutomataParams {
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
 }
+// I WANT COMPTIME!!!!!!!!!!!!!! 😡😡😡😡😡😡😡😡😡😡😡😡😡
+const fn make_random_vec() -> Vec<Complex<f32>> {
+    let mut rng = rand::thread_rng();
+    let mut ir = Vec::<Complex<f32>>::with_capacity(GAME_BOARD_SIZE);
+
+    let mut i = 0;
+    while i < GAME_BOARD_SIZE {
+        let r = rng.gen_range(-1.0..1.0);
+        let im = rng.gen_range(-1.0..1.0);
+        ir[i] = Complex { im, re: r };
+        i += 1;
+    }
+    ir
+}
+
+const RAND_VEC: Vec<Complex<f32>> = make_random_vec();
 
 impl Default for Automata {
     fn default() -> Self {
@@ -57,16 +73,9 @@ impl Default for Automata {
 
         // let mut alive_cells =
         //     HashSet::<(i32, i32)>::with_capacity(GAME_BOARD_SIZE * GAME_BOARD_SIZE);
-        let mut rng = rand::thread_rng();
         // build_random(&mut alive_cells, &mut rng, GAME_BOARD_SIZE);
         // let ir = build_ir(&alive_cells, GAME_BOARD_SIZE);
-        let mut ir = Vec::<Complex<f32>>::with_capacity(GAME_BOARD_SIZE);
-        for i in 0..GAME_BOARD_SIZE {
-            let r = rng.gen_range(-1.0..1.0);
-            let im = rng.gen_range(-1.0..1.0);
-            ir[i] = Complex { im, re: r };
-        }
-        comp_buff[0..GAME_BOARD_SIZE].copy_from_slice(&ir);
+        comp_buff[0..GAME_BOARD_SIZE].copy_from_slice(&RAND_VEC);
 
         Self {
             params: Arc::new(AutomataParams::default()),
