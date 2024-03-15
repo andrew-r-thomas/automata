@@ -18,15 +18,16 @@ use rtrb::*;
 
 struct Automata {
     params: Arc<AutomataParams>,
+
     ir_consumer: Option<Consumer<Complex<f32>>>,
     current_ir: Vec<Complex<f32>>,
-    fft: Option<Arc<dyn RealToComplex<f32>>>,
-    ifft: Option<Arc<dyn ComplexToReal<f32>>>,
-    fft_input: Vec<f32>,
-    fft_output: Vec<Complex<f32>>,
-    ifft_input: Vec<Complex<f32>>,
-    ifft_output: Vec<f32>,
-    output_buff: Vec<Vec<f32>>,
+
+    fft: Arc<dyn RealToComplex<f32>>,
+    ifft: Arc<dyn ComplexToReal<f32>>,
+
+    stft: util::StftHelper,
+
+    comp_buff: Vec<Complex<f32>>,
 }
 
 #[derive(Params)]
@@ -39,21 +40,29 @@ impl Default for Automata {
     fn default() -> Self {
         set_var("NIH_LOG", "~/dev/diy!/automata/log.md");
         nih_log!("we are making default plugin");
+        let mut planner = RealFftPlanner::new();
+        let real_to_complex = planner.plan_fft_forward(FFT_WINDOW_SIZE);
+        let complex_to_real = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
+
+        let mut real_buff = real_to_complex.make_input_vec();
+        let mut comp_buff = real_to_complex.make_output_vec();
+
+        real_buff[0..FILTER_WINDOW_SIZE].copy_from_slice(&SMOOVE);
+
+        real_to_complex.process_with_scratch(&mut real_buff, &mut comp_buff, &mut []);
 
         Self {
             params: Arc::new(AutomataParams::default()),
+
             ir_consumer: None,
-            current_ir: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE),
-            fft: None,
-            ifft: None,
-            fft_input: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE * 2),
-            fft_output: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE),
-            ifft_input: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE),
-            ifft_output: Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE * 2),
-            output_buff: vec![
-                Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE + 512),
-                Vec::with_capacity(DEFAULT_IR_SPECTRUM_SIZE + 512),
-            ],
+            current_ir: comp_buff.clone(),
+
+            fft: real_to_complex,
+            ifft: complex_to_real,
+
+            stft: util::StftHelper::new(2, WINDOW_SIZE, FFT_WINDOW_SIZE - WINDOW_SIZE),
+
+            comp_buff,
         }
     }
 }
