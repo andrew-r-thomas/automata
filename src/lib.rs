@@ -13,6 +13,7 @@ use std::sync::Arc;
 use editor::{build_ir, build_random};
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
+use rand::Rng;
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rtrb::*;
@@ -54,11 +55,17 @@ impl Default for Automata {
 
         let mut comp_buff = real_to_complex.make_output_vec();
 
-        let mut alive_cells =
-            HashSet::<(i32, i32)>::with_capacity(GAME_BOARD_SIZE * GAME_BOARD_SIZE);
+        // let mut alive_cells =
+        //     HashSet::<(i32, i32)>::with_capacity(GAME_BOARD_SIZE * GAME_BOARD_SIZE);
         let mut rng = rand::thread_rng();
-        build_random(&mut alive_cells, &mut rng, GAME_BOARD_SIZE);
-        let ir = build_ir(&alive_cells, GAME_BOARD_SIZE);
+        // build_random(&mut alive_cells, &mut rng, GAME_BOARD_SIZE);
+        // let ir = build_ir(&alive_cells, GAME_BOARD_SIZE);
+        let mut ir = Vec::<Complex<f32>>::with_capacity(GAME_BOARD_SIZE);
+        for i in 0..GAME_BOARD_SIZE {
+            let r = rng.gen_range(-1.0..1.0);
+            let im = rng.gen_range(-1.0..1.0);
+            ir[i] = Complex { im, re: r };
+        }
         comp_buff[0..GAME_BOARD_SIZE].copy_from_slice(&ir);
 
         Self {
