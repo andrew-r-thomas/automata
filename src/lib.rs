@@ -13,7 +13,7 @@ use std::sync::Arc;
 use editor::{build_ir, build_random};
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
-use rand::Rng;
+use rand::{Rng, SeedableRng};
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rtrb::*;
@@ -46,22 +46,6 @@ struct AutomataParams {
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
 }
-// I WANT COMPTIME!!!!!!!!!!!!!! 😡😡😡😡😡😡😡😡😡😡😡😡😡
-const fn make_random_vec() -> Vec<Complex<f32>> {
-    let mut rng = rand::thread_rng();
-    let mut ir = Vec::<Complex<f32>>::with_capacity(GAME_BOARD_SIZE);
-
-    let mut i = 0;
-    while i < GAME_BOARD_SIZE {
-        let r = rng.gen_range(-1.0..1.0);
-        let im = rng.gen_range(-1.0..1.0);
-        ir[i] = Complex { im, re: r };
-        i += 1;
-    }
-    ir
-}
-
-const RAND_VEC: Vec<Complex<f32>> = make_random_vec();
 
 impl Default for Automata {
     fn default() -> Self {
@@ -70,12 +54,30 @@ impl Default for Automata {
         let complex_to_real = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
 
         let mut comp_buff = real_to_complex.make_output_vec();
+        let mut real_buff = real_to_complex.make_input_vec();
 
-        // let mut alive_cells =
-        //     HashSet::<(i32, i32)>::with_capacity(GAME_BOARD_SIZE * GAME_BOARD_SIZE);
-        // build_random(&mut alive_cells, &mut rng, GAME_BOARD_SIZE);
-        // let ir = build_ir(&alive_cells, GAME_BOARD_SIZE);
-        comp_buff[0..GAME_BOARD_SIZE].copy_from_slice(&RAND_VEC);
+        let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
+        let mut rand_vec: [Complex<f32>; 50] = [Complex { re: 0.0, im: 0.0 }; 50];
+
+        for s in &mut rand_vec {
+            let re = rng.gen_range(-1.0..1.0);
+            let im = rng.gen_range(-1.0..1.0);
+            *s += Complex { re, im };
+        }
+
+        // let filter_normalization_factor = rand_vec.iter().sum::<f32>().recip();
+        // for sample in &mut rand_vec {
+        //     *sample *= filter_normalization_factor;
+        // }
+
+        // real_buff[0..FILTER_WINDOW_SIZE].copy_from_slice(&rand_vec[0..FILTER_WINDOW_SIZE]);
+
+        // real_to_complex
+        //     .process_with_scratch(&mut real_buff, &mut comp_buff, &mut [])
+        //     .unwrap();
+
+        assert!(comp_buff.capacity() == 50);
+        comp_buff[0..50].copy_from_slice(&rand_vec[0..50]);
 
         Self {
             params: Arc::new(AutomataParams::default()),

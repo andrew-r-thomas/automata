@@ -18,7 +18,8 @@ crate-type = ["cdylib"]
 # thread in debug builds.
 nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["assert_process_allocs"] }
 nih_plug_vizia = {git = "https://github.com/robbert-vdh/nih-plug.git"}
-rand = "0.8.5"
+rand = {version = "0.8.5", features = ["small_rng"]}
+rand_xoshiro = "0.6.0"
 realfft = "3.3.0"
 rtrb = "0.3.0"
 xtask = { version = "0.1.0", path = "xtask" }

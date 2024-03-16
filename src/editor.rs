@@ -85,8 +85,8 @@ pub(crate) fn create(
                 .height(Pixels(50.0))
                 .child_top(Stretch(1.0))
                 .child_bottom(Pixels(0.0));
-            Button::new(cx, |_| {}, |cx| Label::new(cx, "start/stop"));
-            Button::new(cx, |_| {}, |cx| Label::new(cx, "reset"));
+            Button::new(cx, |_| {}, |cx| Label::new(cx, "button"));
+            Button::new(cx, |_| {}, |cx| Label::new(cx, "other button"));
         })
         .row_between(Pixels(0.0))
         .child_left(Stretch(1.0))
