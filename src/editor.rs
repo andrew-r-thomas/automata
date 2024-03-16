@@ -1,7 +1,7 @@
 use nih_plug::editor::Editor;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
-use rand::rngs::ThreadRng;
+use rand::rngs::SmallRng;
 use rand::Rng;
 use realfft::num_complex::Complex;
 // use rtrb::*;
@@ -180,7 +180,7 @@ pub(crate) fn create(
 //     neighbors
 // }
 
-pub fn build_random(board: &mut HashSet<(i32, i32)>, rng: &mut ThreadRng, size: usize) {
+pub fn build_random(board: &mut HashSet<(i32, i32)>, rng: &mut SmallRng, size: usize) {
     for i in 0..size {
         for j in 0..size {
             if rng.gen_bool(0.5) {

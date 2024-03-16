@@ -57,12 +57,36 @@ impl Default for Automata {
         let mut real_buff = real_to_complex.make_input_vec();
 
         let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
-        let mut rand_vec: [Complex<f32>; 50] = [Complex { re: 0.0, im: 0.0 }; 50];
+        let mut alive_cells =
+            HashSet::<(i32, i32)>::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
+        build_random(&mut alive_cells, &mut rng, FILTER_WINDOW_SIZE);
 
-        for s in &mut rand_vec {
-            let re = rng.gen_range(-1.0..1.0);
-            let im = rng.gen_range(-1.0..1.0);
-            *s += Complex { re, im };
+        let mut ir: Vec<f32> = vec![0.0; FILTER_WINDOW_SIZE];
+        for i in 0..FILTER_WINDOW_SIZE {
+            ir[i] = {
+                let mut out = 0.0;
+                for j in 0..FILTER_WINDOW_SIZE {
+                    let b_ij = {
+                        if alive_cells.contains(&(i as i32, j as i32)) {
+                            1.0
+                        } else {
+                            -1.0
+                        }
+                    };
+                    let b_ji = {
+                        if alive_cells.contains(&(j as i32, i as i32)) {
+                            1.0
+                        } else {
+                            -1.0
+                        }
+                    };
+
+                    out += b_ij + b_ji;
+                }
+
+                out /= FILTER_WINDOW_SIZE as f32;
+                out
+            }
         }
 
         // let filter_normalization_factor = rand_vec.iter().sum::<f32>().recip();
@@ -70,14 +94,11 @@ impl Default for Automata {
         //     *sample *= filter_normalization_factor;
         // }
 
-        // real_buff[0..FILTER_WINDOW_SIZE].copy_from_slice(&rand_vec[0..FILTER_WINDOW_SIZE]);
+        real_buff[0..FILTER_WINDOW_SIZE].copy_from_slice(&ir[0..FILTER_WINDOW_SIZE]);
 
-        // real_to_complex
-        //     .process_with_scratch(&mut real_buff, &mut comp_buff, &mut [])
-        //     .unwrap();
-
-        assert!(comp_buff.capacity() == 50);
-        comp_buff[0..50].copy_from_slice(&rand_vec[0..50]);
+        real_to_complex
+            .process_with_scratch(&mut real_buff, &mut comp_buff, &mut [])
+            .unwrap();
 
         Self {
             params: Arc::new(AutomataParams::default()),
