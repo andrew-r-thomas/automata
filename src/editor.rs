@@ -1,20 +1,14 @@
-use crate::{consts::*, AutomataParams};
+use crate::AutomataParams;
 
-use std::sync::mpsc::{self, Sender};
 use std::sync::Arc;
-use std::thread;
 
 use nih_plug::editor::Editor;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
-use realfft::num_complex::Complex;
-use rtrb::*;
 
 #[derive(Lens)]
 struct Data {
     params: Arc<AutomataParams>,
-    game_loop_sender: Sender<GUIEvent>,
-    running: bool,
 }
 
 pub enum GUIEvent {
@@ -25,24 +19,8 @@ pub enum GUIEvent {
 impl Model for Data {
     fn event(&mut self, _: &mut EventContext, event: &mut Event) {
         event.map(|gui_event: &GUIEvent, _| match gui_event {
-            GUIEvent::PlayPause => {
-                self.running = !self.running;
-                match self.game_loop_sender.send(GUIEvent::PlayPause) {
-                    Ok(_) => {}
-                    Err(_) => {
-                        todo!()
-                    }
-                }
-            }
-            GUIEvent::Reset => {
-                self.running = false;
-                match self.game_loop_sender.send(GUIEvent::Reset) {
-                    Ok(_) => {}
-                    Err(_) => {
-                        todo!()
-                    }
-                }
-            }
+            GUIEvent::PlayPause => {}
+            GUIEvent::Reset => {}
         });
     }
 }
@@ -55,24 +33,13 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
 pub(crate) fn create(
     params: Arc<AutomataParams>,
     editor_state: Arc<ViziaState>,
-) -> (Consumer<Complex<f32>>, Option<Box<dyn Editor>>) {
-    let (s, r) = mpsc::channel::<GUIEvent>();
-
-    // TODO we are probably fine with this size being times 2
-    // but we will have issues if our audio thread is popping slower
-    // than our game thread pushes
-    let (prod, cons) = RingBuffer::<Complex<f32>>::new(FILTER_WINDOW_SIZE * 2);
-
-    thread::spawn(move || game_loop(r, prod));
-
+) -> Option<Box<dyn Editor>> {
     let e = create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
         assets::register_noto_sans_thin(cx);
 
         Data {
             params: params.clone(),
-            game_loop_sender: s.clone(),
-            running: false,
         }
         .build(cx);
 
@@ -91,5 +58,5 @@ pub(crate) fn create(
         .child_right(Stretch(1.0));
     });
 
-    (cons, e)
+    e
 }

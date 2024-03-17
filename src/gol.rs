@@ -1,24 +1,34 @@
-use std::collections::HashSet;
+// TODO gol will manage its own thread for running the game
+// TODO set up communication between background tasks and audio thread
+use std::{
+    collections::HashSet,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, MutexGuard,
+    },
+    thread,
+};
 
 use rand::{rngs::SmallRng, SeedableRng};
+use rtrb::Producer;
 
 use crate::consts::{FILTER_WINDOW_SIZE, SEED};
 
-struct GOL {
-    current_board: HashSet<(i32, i32)>,
+pub struct GOL {
+    current_board: Arc<Mutex<HashSet<(i32, i32)>>>,
     rng: SmallRng,
-    running: bool,
+    running: Arc<AtomicBool>,
 }
 
 impl GOL {
     pub fn new() -> Self {
-        let current_board = HashSet::<(i32, i32)>::new();
+        let current_board = Arc::new(Mutex::new(HashSet::<(i32, i32)>::new()));
         let rng = SmallRng::seed_from_u64(SEED);
 
         let gol = GOL {
             current_board,
             rng,
-            running: false,
+            running: Arc::new(AtomicBool::new(false)),
         };
 
         gol.build_random();
@@ -26,18 +36,23 @@ impl GOL {
         gol
     }
 
-    fn build_random(&self) {
-        todo!()
-    }
+    // TODO can probably do this in new?
+    // idk if that sucks to deal with,
+    // we will see
+    pub fn start(&self, mut ir_prod: Producer<f32>) {
+        let running = self.running.clone();
+        let current_board = self.current_board.clone();
 
-    pub fn start(&self) {
-        let mut dying: Vec<(i32, i32)> = Vec::new();
-        let mut born: Vec<(i32, i32)> = Vec::new();
+        thread::spawn(move || {
+            let mut dying: Vec<(i32, i32)> = Vec::new();
+            let mut born: Vec<(i32, i32)> = Vec::new();
 
-        loop {
-            match self.running {
-                true => {
-                    let mut alive_cells = self.current_board;
+            loop {
+                if running.load(Ordering::Relaxed) {
+                    let mut alive_cells = match current_board.lock() {
+                        Ok(x) => x,
+                        Err(_) => todo!(),
+                    };
 
                     for cell in alive_cells.iter() {
                         let neighbors = Self::find_neighbors(&cell);
@@ -71,22 +86,42 @@ impl GOL {
                     dying.clear();
                     born.clear();
 
-                    // let ir = build_ir(&alive_cells);
-                    // match ir_producer.write_chunk_uninit(FILTER_WINDOW_SIZE) {
-                    //     Ok(chunk) => {
-                    //         chunk.fill_from_iter(ir.into_iter());
-                    //     }
-                    //     Err(_) => {
-                    //         todo!();
-                    //     }
-                    // }
+                    // build impluse response and send it to audio thread
+                    let ir = Self::build_ir(alive_cells);
+                    match ir_prod.write_chunk_uninit(FILTER_WINDOW_SIZE) {
+                        Ok(chunk) => {
+                            chunk.fill_from_iter(ir.into_iter());
+                        }
+                        Err(_) => {
+                            todo!();
+                        }
+                    }
 
-                    dying.clear();
-                    born.clear();
+                    // TODO eventually we also need to send the game state
+                    // to the gui
                 }
-                false => {}
             }
+        });
+    }
+
+    pub fn play_pause(&self) {
+        let running = self.running.load(Ordering::Relaxed);
+        self.running.store(running, Ordering::Relaxed);
+    }
+
+    pub fn reset(&self) {
+        self.running.store(false, Ordering::Relaxed);
+        match self.current_board.lock() {
+            Ok(mut x) => {
+                x.clear();
+                self.build_random();
+            }
+            Err(_) => todo!(),
         }
+    }
+
+    fn build_random(&self) {
+        todo!()
     }
 
     fn find_neighbors(pos: &(i32, i32)) -> Vec<(i32, i32)> {
@@ -100,101 +135,11 @@ impl GOL {
         }
         neighbors
     }
+
+    fn build_ir(board: MutexGuard<'_, HashSet<(i32, i32)>>) -> Vec<f32> {
+        todo!()
+    }
 }
-
-// pub fn game_loop(gui_reciever: Receiver<GUIEvent>, mut ir_producer: Producer<Complex<f32>>) {
-//     let mut alive_cells =
-//         HashSet::<(i32, i32)>::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
-//     let mut game_running = false;
-//     let mut rng = SmallRng::seed_from_u64(69);
-
-//     build_random(&mut alive_cells, &mut rng, FILTER_WINDOW_SIZE);
-
-//     loop {
-//         let message = gui_reciever.try_recv();
-//         match message {
-//             Ok(GUIEvent::PlayPause) => {
-//                 game_running = !game_running;
-//             }
-//             Ok(GUIEvent::Reset) => {
-//                 game_running = false;
-//                 alive_cells.drain();
-//                 build_random(&mut alive_cells, &mut rng, FILTER_WINDOW_SIZE);
-//             }
-//             Err(TryRecvError::Empty) => {}
-//             Err(TryRecvError::Disconnected) => panic!("gui disconnected from game loop"),
-//         }
-
-//         if game_running {
-//             let mut dying: Vec<(i32, i32)> = Vec::new();
-//             let mut born: Vec<(i32, i32)> = Vec::new();
-
-//             for cell in alive_cells.iter() {
-//                 let neighbors = find_neighbors(&cell);
-//                 let mut living_neighbors: u8 = 0;
-//                 for neighbor in neighbors.iter() {
-//                     if alive_cells.contains(neighbor) {
-//                         living_neighbors += 1;
-//                     } else if !born.contains(neighbor) {
-//                         let neighbors_neighbors = find_neighbors(neighbor);
-//                         let mut neighbors_living_neighbors: u8 = 0;
-//                         for neighbor_neighbor in neighbors_neighbors.iter() {
-//                             if alive_cells.contains(neighbor_neighbor) {
-//                                 neighbors_living_neighbors += 1;
-//                             }
-//                         }
-//                         if neighbors_living_neighbors == 3 && !born.contains(neighbor) {
-//                             born.push(*neighbor);
-//                         }
-//                     }
-//                 }
-//                 if living_neighbors > 3 || living_neighbors < 2 && !dying.contains(cell) {
-//                     dying.push(*cell);
-//                 }
-//             }
-//             for cell in dying.iter() {
-//                 alive_cells.remove(cell);
-//             }
-//             for cell in born.iter() {
-//                 alive_cells.insert(*cell);
-//             }
-//             dying.clear();
-//             born.clear();
-
-//             let ir = build_ir(&alive_cells);
-//             match ir_producer.write_chunk_uninit(FILTER_WINDOW_SIZE) {
-//                 Ok(chunk) => {
-//                     chunk.fill_from_iter(ir.into_iter());
-//                 }
-//                 Err(_) => {
-//                     todo!();
-//                 }
-//             }
-//         }
-//     }
-// }
-
-// fn find_neighbors(pos: &(i32, i32)) -> Vec<(i32, i32)> {
-//     let mut neighbors: Vec<(i32, i32)> = Vec::new();
-//     for x in -1..2 {
-//         for y in -1..2 {
-//             if x != 0 || y != 0 {
-//                 neighbors.push((pos.0 + x, pos.1 + y));
-//             }
-//         }
-//     }
-//     neighbors
-// }
-
-// pub fn build_random(board: &mut HashSet<(i32, i32)>, rng: &mut SmallRng, size: usize) {
-//     for i in 0..size {
-//         for j in 0..size {
-//             if rng.gen_bool(0.5) {
-//                 board.insert((i as i32, j as i32));
-//             }
-//         }
-//     }
-// }
 
 // // TODO rewrite this
 // pub fn build_ir(board: &HashSet<(i32, i32)>, size: usize) -> Vec<Complex<f32>> {

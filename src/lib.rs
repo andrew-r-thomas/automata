@@ -5,6 +5,9 @@ pub mod gol;
 use std::sync::Arc;
 
 use consts::*;
+use editor::GUIEvent::{self, PlayPause, Reset};
+use gol::GOL;
+
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use realfft::num_complex::Complex;
@@ -14,15 +17,15 @@ use rtrb::*;
 struct Automata {
     params: Arc<AutomataParams>,
 
-    _ir_consumer: Option<Consumer<Complex<f32>>>,
-    current_ir: Vec<Complex<f32>>,
-
     fft: Arc<dyn RealToComplex<f32>>,
     ifft: Arc<dyn ComplexToReal<f32>>,
 
     stft: util::StftHelper,
 
     comp_buff: Vec<Complex<f32>>,
+
+    ir_cons: Option<Consumer<f32>>,
+    current_ir: Vec<Complex<f32>>,
 }
 
 #[derive(Params)]
@@ -33,14 +36,20 @@ struct AutomataParams {
 
 impl Default for Automata {
     fn default() -> Self {
+        let mut planner = RealFftPlanner::new();
+        let fft = planner.plan_fft_forward(FFT_WINDOW_SIZE);
+        let ifft = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
+
+        let comp_buff = ifft.make_input_vec();
+
         Self {
             params: Arc::new(AutomataParams::default()),
 
-            _ir_consumer: None,
             current_ir: comp_buff.clone(),
+            ir_cons: None,
 
-            fft: real_to_complex,
-            ifft: complex_to_real,
+            fft,
+            ifft,
 
             stft: util::StftHelper::new(2, WINDOW_SIZE, FFT_WINDOW_SIZE - WINDOW_SIZE),
 
@@ -93,7 +102,24 @@ impl Plugin for Automata {
     // documentation for more information. `()` means that the plugin does not have any background
     // tasks.
 
-    type BackgroundTask = ();
+    type BackgroundTask = GUIEvent;
+    fn task_executor(&mut self) -> TaskExecutor<Self> {
+        let gol = GOL::new();
+
+        let (prod, cons) = rtrb::RingBuffer::<f32>::new(FILTER_WINDOW_SIZE * 2);
+        self.ir_cons = Some(cons);
+
+        gol.start(prod);
+
+        Box::new(move |task: GUIEvent| match task {
+            PlayPause => {
+                gol.play_pause();
+            }
+            Reset => {
+                gol.reset();
+            }
+        })
+    }
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
