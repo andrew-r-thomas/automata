@@ -1,29 +1,15 @@
+pub mod consts;
 pub mod editor;
+pub mod gol;
 
-use std::collections::HashSet;
 use std::sync::Arc;
 
-use editor::{build_ir, build_random};
+use consts::*;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
-use rand::{Rng, SeedableRng};
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 use rtrb::*;
-
-const WINDOW_SIZE: usize = 64;
-const FILTER_WINDOW_SIZE: usize = 33;
-const GAME_BOARD_SIZE: usize = (FFT_WINDOW_SIZE / 2) + 1;
-pub const SMOOVE: [f32; FILTER_WINDOW_SIZE] =
-    [1 as f32 / FILTER_WINDOW_SIZE as f32; FILTER_WINDOW_SIZE];
-const FFT_WINDOW_SIZE: usize = WINDOW_SIZE + FILTER_WINDOW_SIZE + 1;
-
-const GAIN_COMP: f32 = 1.0 / FFT_WINDOW_SIZE as f32;
-
-enum Tasks {
-    StartStop,
-    Reset,
-}
 
 struct Automata {
     params: Arc<AutomataParams>,
@@ -47,41 +33,6 @@ struct AutomataParams {
 
 impl Default for Automata {
     fn default() -> Self {
-        let mut planner = RealFftPlanner::new();
-        let real_to_complex = planner.plan_fft_forward(FFT_WINDOW_SIZE);
-        let complex_to_real = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
-
-        let mut comp_buff = real_to_complex.make_output_vec();
-        let mut real_buff = real_to_complex.make_input_vec();
-
-        let mut ir: Vec<f32> = vec![0.0; FILTER_WINDOW_SIZE];
-        for i in 0..FILTER_WINDOW_SIZE {
-            ir[i] = {
-                let mut out = 0.0;
-                for j in 0..FILTER_WINDOW_SIZE {
-                    let b_ij = match alive_cells.contains(&(i as i32, j as i32)) {
-                        true => 1.0,
-                        false => -1.0,
-                    };
-                    let b_ji = match alive_cells.contains(&(j as i32, i as i32)) {
-                        true => 1.0,
-                        false => -1.0,
-                    };
-
-                    out += b_ij + b_ji;
-                }
-
-                out /= FILTER_WINDOW_SIZE as f32;
-                out
-            }
-        }
-
-        real_buff[0..FILTER_WINDOW_SIZE].copy_from_slice(&ir[0..FILTER_WINDOW_SIZE]);
-
-        real_to_complex
-            .process_with_scratch(&mut real_buff, &mut comp_buff, &mut [])
-            .unwrap();
-
         Self {
             params: Arc::new(AutomataParams::default()),
 
