@@ -1,10 +1,3 @@
-// TODO for some reason we are crashing when using the
-// game board, it's probably some sizing stuff being wrong
-// because we are trying to fit the spectrum into the filter
-// and doing it incorrectly
-// it could also be not doing the normalizing, which
-// probably should be done game side
-
 pub mod editor;
 
 use std::collections::HashSet;
@@ -26,6 +19,11 @@ pub const SMOOVE: [f32; FILTER_WINDOW_SIZE] =
 const FFT_WINDOW_SIZE: usize = WINDOW_SIZE + FILTER_WINDOW_SIZE + 1;
 
 const GAIN_COMP: f32 = 1.0 / FFT_WINDOW_SIZE as f32;
+
+enum Tasks {
+    StartStop,
+    Reset,
+}
 
 struct Automata {
     params: Arc<AutomataParams>,
@@ -56,29 +54,18 @@ impl Default for Automata {
         let mut comp_buff = real_to_complex.make_output_vec();
         let mut real_buff = real_to_complex.make_input_vec();
 
-        let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
-        let mut alive_cells =
-            HashSet::<(i32, i32)>::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
-        build_random(&mut alive_cells, &mut rng, FILTER_WINDOW_SIZE);
-
         let mut ir: Vec<f32> = vec![0.0; FILTER_WINDOW_SIZE];
         for i in 0..FILTER_WINDOW_SIZE {
             ir[i] = {
                 let mut out = 0.0;
                 for j in 0..FILTER_WINDOW_SIZE {
-                    let b_ij = {
-                        if alive_cells.contains(&(i as i32, j as i32)) {
-                            1.0
-                        } else {
-                            -1.0
-                        }
+                    let b_ij = match alive_cells.contains(&(i as i32, j as i32)) {
+                        true => 1.0,
+                        false => -1.0,
                     };
-                    let b_ji = {
-                        if alive_cells.contains(&(j as i32, i as i32)) {
-                            1.0
-                        } else {
-                            -1.0
-                        }
+                    let b_ji = match alive_cells.contains(&(j as i32, i as i32)) {
+                        true => 1.0,
+                        false => -1.0,
                     };
 
                     out += b_ij + b_ji;
@@ -88,11 +75,6 @@ impl Default for Automata {
                 out
             }
         }
-
-        // let filter_normalization_factor = rand_vec.iter().sum::<f32>().recip();
-        // for sample in &mut rand_vec {
-        //     *sample *= filter_normalization_factor;
-        // }
 
         real_buff[0..FILTER_WINDOW_SIZE].copy_from_slice(&ir[0..FILTER_WINDOW_SIZE]);
 
@@ -159,6 +141,7 @@ impl Plugin for Automata {
     // More advanced plugins can use this to run expensive background tasks. See the field's
     // documentation for more information. `()` means that the plugin does not have any background
     // tasks.
+
     type BackgroundTask = ();
 
     fn params(&self) -> Arc<dyn Params> {
