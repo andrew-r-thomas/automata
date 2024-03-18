@@ -106,8 +106,8 @@ impl Plugin for Automata {
 
     type BackgroundTask = GUIEvent;
     fn task_executor(&mut self) -> TaskExecutor<Self> {
-        let (mut ir_prod, ir_cons) = rtrb::RingBuffer::<Complex<f32>>::new(FILTER_WINDOW_SIZE * 2);
-        self.ir_cons = Some(ir_cons);
+        // let (mut ir_prod, ir_cons) = rtrb::RingBuffer::<Complex<f32>>::new(FILTER_WINDOW_SIZE * 2);
+        // self.ir_cons = Some(ir_cons);
 
         let (message_sender, message_reciever) = mpsc::channel::<GUIEvent>();
 
@@ -232,14 +232,14 @@ impl Plugin for Automata {
 
                     // build impluse response and send it to audio thread
                     build_ir(&mut current_board, &mut comp_buff, &mut real_buff);
-                    match ir_prod.write_chunk_uninit(FILTER_WINDOW_SIZE) {
-                        Ok(chunk) => {
-                            chunk.fill_from_iter(comp_buff.clone());
-                        }
-                        Err(_) => {
-                            todo!();
-                        }
-                    }
+                    // match ir_prod.write_chunk_uninit(FILTER_WINDOW_SIZE) {
+                    //     Ok(chunk) => {
+                    //         chunk.fill_from_iter(comp_buff.clone());
+                    //     }
+                    //     Err(_) => {
+                    //         todo!();
+                    //     }
+                    // }
 
                     comp_buff.clear();
                 }
@@ -299,24 +299,24 @@ impl Plugin for Automata {
         nih_log!("doing a process block");
 
         // TODO figure out how to handle panic here
-        match self.ir_cons.as_mut() {
-            Some(c) => match c.read_chunk(FILTER_WINDOW_SIZE) {
-                Ok(ir) => {
-                    let slices = ir.as_slices();
-                    self.current_ir[0..slices.0.len()].copy_from_slice(slices.0);
-                    self.current_ir[slices.0.len()..slices.0.len() + slices.1.len()]
-                        .copy_from_slice(slices.1);
-                    ir.commit_all()
-                }
-                Err(e) => {
-                    nih_log!("{}", e);
-                }
-            },
-            None => {
-                nih_log!("no ir buff");
-                return ProcessStatus::Normal;
-            }
-        }
+        // match self.ir_cons.as_mut() {
+        //     Some(c) => match c.read_chunk(FILTER_WINDOW_SIZE) {
+        //         Ok(ir) => {
+        //             let slices = ir.as_slices();
+        //             self.current_ir[0..slices.0.len()].copy_from_slice(slices.0);
+        //             self.current_ir[slices.0.len()..slices.0.len() + slices.1.len()]
+        //                 .copy_from_slice(slices.1);
+        //             ir.commit_all()
+        //         }
+        //         Err(e) => {
+        //             nih_log!("{}", e);
+        //         }
+        //     },
+        //     None => {
+        //         nih_log!("no ir buff");
+        //         return ProcessStatus::Normal;
+        //     }
+        // }
 
         self.stft
             .process_overlap_add(buffer, 1, |_channel, real_buff| {
