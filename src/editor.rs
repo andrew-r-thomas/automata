@@ -1,14 +1,16 @@
-use crate::AutomataParams;
+use crate::{Automata, AutomataParams};
 
 use std::sync::Arc;
 
 use nih_plug::editor::Editor;
+use nih_plug::prelude::AsyncExecutor;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
 #[derive(Lens)]
 struct Data {
     params: Arc<AutomataParams>,
+    executor: AsyncExecutor<Automata>,
 }
 
 pub enum GUIEvent {
@@ -19,8 +21,8 @@ pub enum GUIEvent {
 impl Model for Data {
     fn event(&mut self, _: &mut EventContext, event: &mut Event) {
         event.map(|gui_event: &GUIEvent, _| match gui_event {
-            GUIEvent::PlayPause => {}
-            GUIEvent::Reset => {}
+            GUIEvent::PlayPause => self.executor.execute_background(GUIEvent::PlayPause),
+            GUIEvent::Reset => self.executor.execute_background(GUIEvent::Reset),
         });
     }
 }
@@ -33,6 +35,7 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
 pub(crate) fn create(
     params: Arc<AutomataParams>,
     editor_state: Arc<ViziaState>,
+    executor: AsyncExecutor<Automata>,
 ) -> Option<Box<dyn Editor>> {
     let e = create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
         assets::register_noto_sans_light(cx);
@@ -40,6 +43,7 @@ pub(crate) fn create(
 
         Data {
             params: params.clone(),
+            executor: executor.clone(),
         }
         .build(cx);
 
