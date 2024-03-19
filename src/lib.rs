@@ -2,12 +2,11 @@ pub mod consts;
 pub mod editor;
 
 use std::collections::HashSet;
-use std::sync::{mpsc, Arc};
-use std::thread;
+use std::sync::{Arc, Mutex};
 
 use consts::*;
-use editor::GUIEvent::{self, PlayPause, Reset};
 
+use editor::GUIEvent;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use rand::rngs::SmallRng;
@@ -105,19 +104,26 @@ impl Plugin for Automata {
     // tasks.
 
     type BackgroundTask = GUIEvent;
+
+    // TODO move this shit to the audio thread
     fn task_executor(&mut self) -> TaskExecutor<Self> {
-        let (mut ir_prod, ir_cons) = rtrb::RingBuffer::<Complex<f32>>::new(FILTER_WINDOW_SIZE * 3);
+        let (ir_prod, ir_cons) = rtrb::RingBuffer::<Complex<f32>>::new(FILTER_WINDOW_SIZE * 3);
         self.ir_cons = Some(ir_cons);
 
-        let (message_sender, message_reciever) = mpsc::channel::<GUIEvent>();
+        let celled = Arc::new(Mutex::new(ir_prod));
 
-        let handle = thread::spawn(move || {
+        Box::new(move |_| {
             panic!();
+
+            let mut prod = match celled.lock() {
+                Ok(x) => x,
+                Err(_) => todo!(),
+            };
+
             // initialize stuff
             let mut current_board: HashSet<(i32, i32)> =
                 HashSet::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
             let mut rng = SmallRng::seed_from_u64(SEED);
-            let mut running = false;
             let mut planner = RealFftPlanner::new();
             let real_to_complex = planner.plan_fft_forward(FFT_WINDOW_SIZE);
 
@@ -183,7 +189,7 @@ impl Plugin for Automata {
             build_random(&mut current_board);
 
             build_ir(&mut current_board, &mut comp_buff, &mut real_buff);
-            match ir_prod.write_chunk(FILTER_WINDOW_SIZE) {
+            match prod.write_chunk(FILTER_WINDOW_SIZE) {
                 Ok(mut chunk) => {
                     let slices = chunk.as_mut_slices();
 
@@ -206,79 +212,60 @@ impl Plugin for Automata {
             let mut born: Vec<(i32, i32)> = Vec::new();
 
             loop {
-                match message_reciever.recv() {
-                    Ok(x) => match x {
-                        PlayPause => running = !running,
-                        Reset => {
-                            running = false;
-                            current_board.clear();
-                            build_random(&mut current_board);
-                        }
-                    },
-                    Err(_) => todo!(),
-                };
-
-                if running {
-                    for cell in current_board.iter() {
-                        let neighbors = find_neighbors(&cell);
-                        let mut living_neighbors: u8 = 0;
-                        for neighbor in neighbors.iter() {
-                            if current_board.contains(neighbor) {
-                                living_neighbors += 1;
-                            } else if !born.contains(neighbor) {
-                                let neighbors_neighbors = find_neighbors(neighbor);
-                                let mut neighbors_living_neighbors: u8 = 0;
-                                for neighbor_neighbor in neighbors_neighbors.iter() {
-                                    if current_board.contains(neighbor_neighbor) {
-                                        neighbors_living_neighbors += 1;
-                                    }
-                                }
-                                if neighbors_living_neighbors == 3 && !born.contains(neighbor) {
-                                    born.push(*neighbor);
+                for cell in current_board.iter() {
+                    let neighbors = find_neighbors(&cell);
+                    let mut living_neighbors: u8 = 0;
+                    for neighbor in neighbors.iter() {
+                        if current_board.contains(neighbor) {
+                            living_neighbors += 1;
+                        } else if !born.contains(neighbor) {
+                            let neighbors_neighbors = find_neighbors(neighbor);
+                            let mut neighbors_living_neighbors: u8 = 0;
+                            for neighbor_neighbor in neighbors_neighbors.iter() {
+                                if current_board.contains(neighbor_neighbor) {
+                                    neighbors_living_neighbors += 1;
                                 }
                             }
-                        }
-                        if living_neighbors > 3 || living_neighbors < 2 && !dying.contains(cell) {
-                            dying.push(*cell);
-                        }
-                    }
-                    for cell in dying.iter() {
-                        current_board.remove(cell);
-                    }
-                    for cell in born.iter() {
-                        current_board.insert(*cell);
-                    }
-                    dying.clear();
-                    born.clear();
-
-                    // build impluse response and send it to audio thread
-                    build_ir(&mut current_board, &mut comp_buff, &mut real_buff);
-                    match ir_prod.write_chunk(FILTER_WINDOW_SIZE * 5) {
-                        Ok(mut chunk) => {
-                            let slices = chunk.as_mut_slices();
-
-                            let first_len = slices.0.len();
-                            let second_len = slices.0.len();
-
-                            slices.0[0..first_len].copy_from_slice(&comp_buff[0..first_len]);
-                            slices.1[0..second_len]
-                                .copy_from_slice(&comp_buff[first_len..first_len + second_len]);
-
-                            chunk.commit_all();
-                        }
-                        Err(_) => {
-                            todo!();
+                            if neighbors_living_neighbors == 3 && !born.contains(neighbor) {
+                                born.push(*neighbor);
+                            }
                         }
                     }
-
-                    comp_buff.clear();
+                    if living_neighbors > 3 || living_neighbors < 2 && !dying.contains(cell) {
+                        dying.push(*cell);
+                    }
                 }
-            }
-        });
+                for cell in dying.iter() {
+                    current_board.remove(cell);
+                }
+                for cell in born.iter() {
+                    current_board.insert(*cell);
+                }
+                dying.clear();
+                born.clear();
 
-        Box::new(move |task: GUIEvent| match message_sender.send(task) {
-            Ok(_) => {}
-            Err(_) => todo!(),
+                // build impluse response and send it to audio thread
+                build_ir(&mut current_board, &mut comp_buff, &mut real_buff);
+                match prod.write_chunk(FILTER_WINDOW_SIZE * 5) {
+                    Ok(mut chunk) => {
+                        let slices = chunk.as_mut_slices();
+
+                        let first_len = slices.0.len();
+                        let second_len = slices.0.len();
+
+                        slices.0[0..first_len].copy_from_slice(&comp_buff[0..first_len]);
+                        slices.1[0..second_len]
+                            .copy_from_slice(&comp_buff[first_len..first_len + second_len]);
+
+                        chunk.commit_all();
+                    }
+                    Err(_) => {
+                        todo!();
+                    }
+                }
+
+                comp_buff.clear();
+            }
         })
     }
 
@@ -288,11 +275,10 @@ impl Plugin for Automata {
 
     fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         // TODO we might not want to do this in the editor funtion
-        nih_log!("we are trying to make editor");
         let e = editor::create(
             self.params.clone(),
             self.params.editor_state.clone(),
-            async_executor,
+            async_executor.clone(),
         );
         e
     }
