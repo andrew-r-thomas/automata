@@ -112,6 +112,7 @@ impl Plugin for Automata {
         let (message_sender, message_reciever) = mpsc::channel::<GUIEvent>();
 
         let handle = thread::spawn(move || {
+            panic!();
             // initialize stuff
             let mut current_board: HashSet<(i32, i32)> =
                 HashSet::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
