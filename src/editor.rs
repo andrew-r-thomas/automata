@@ -54,8 +54,16 @@ pub(crate) fn create(
                 .height(Pixels(50.0))
                 .child_top(Stretch(1.0))
                 .child_bottom(Pixels(0.0));
-            Button::new(cx, |_| {}, |cx| Label::new(cx, "button"));
-            Button::new(cx, |_| {}, |cx| Label::new(cx, "other button"));
+            Button::new(
+                cx,
+                |ex| ex.emit(GUIEvent::PlayPause),
+                |cx| Label::new(cx, "play/pause"),
+            );
+            Button::new(
+                cx,
+                |ex| ex.emit(GUIEvent::Reset),
+                |cx| Label::new(cx, "reset"),
+            );
         })
         .row_between(Pixels(0.0))
         .child_left(Stretch(1.0))

@@ -111,7 +111,7 @@ impl Plugin for Automata {
 
         let (message_sender, message_reciever) = mpsc::channel::<GUIEvent>();
 
-        thread::spawn(move || {
+        let handle = thread::spawn(move || {
             // initialize stuff
             let mut current_board: HashSet<(i32, i32)> =
                 HashSet::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
@@ -181,6 +181,26 @@ impl Plugin for Automata {
             // initialize a random board
             build_random(&mut current_board);
 
+            build_ir(&mut current_board, &mut comp_buff, &mut real_buff);
+            match ir_prod.write_chunk(FILTER_WINDOW_SIZE) {
+                Ok(mut chunk) => {
+                    let slices = chunk.as_mut_slices();
+
+                    let first_len = slices.0.len();
+                    let second_len = slices.0.len();
+
+                    slices.0[0..first_len].copy_from_slice(&comp_buff[0..first_len]);
+                    slices.1[0..second_len]
+                        .copy_from_slice(&comp_buff[first_len..first_len + second_len]);
+
+                    chunk.commit_all();
+                }
+                Err(_) => {
+                    todo!();
+                }
+            }
+            comp_buff.clear();
+
             let mut dying: Vec<(i32, i32)> = Vec::new();
             let mut born: Vec<(i32, i32)> = Vec::new();
 
@@ -232,7 +252,7 @@ impl Plugin for Automata {
 
                     // build impluse response and send it to audio thread
                     build_ir(&mut current_board, &mut comp_buff, &mut real_buff);
-                    match ir_prod.write_chunk(FILTER_WINDOW_SIZE) {
+                    match ir_prod.write_chunk(FILTER_WINDOW_SIZE * 5) {
                         Ok(mut chunk) => {
                             let slices = chunk.as_mut_slices();
 
