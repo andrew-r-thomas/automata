@@ -187,7 +187,11 @@ impl Plugin for Automata {
                 .process_with_scratch(&mut self.real_buff, &mut self.comp_buff, &mut [])
                 .unwrap();
 
-            self.current_ir.copy_from_slice(&self.comp_buff);
+            let filter_len = self.current_ir.len();
+
+            self.current_ir[0..filter_len].copy_from_slice(&self.comp_buff[0..filter_len]);
+
+            self.comp_buff.clear();
         }
 
         self.stft
