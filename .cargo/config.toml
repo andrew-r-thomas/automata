@@ -2,4 +2,4 @@
 xtask = "run --package xtask --release --"
 
 [env]
-NIH_LOG = {value = "../log.md", relative = true}
+NIH_LOG = "/Users/andrewthomas/diy!/automata/log.md"

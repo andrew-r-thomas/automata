@@ -35,7 +35,6 @@ pub fn step(
     current_board: &mut HashSet<(i32, i32)>,
     born: &mut Vec<(i32, i32)>,
     dying: &mut Vec<(i32, i32)>,
-    real_buff: &mut Vec<f32>,
 ) {
     for cell in current_board.iter() {
         let neighbors = find_neighbors(&cell);
@@ -69,9 +68,6 @@ pub fn step(
     }
     dying.clear();
     born.clear();
-
-    // build impluse response and send it to audio thread
-    build_ir(current_board, real_buff);
 }
 
 pub fn build_ir(board: &mut HashSet<(i32, i32)>, real_buff: &mut Vec<f32>) {
@@ -79,13 +75,15 @@ pub fn build_ir(board: &mut HashSet<(i32, i32)>, real_buff: &mut Vec<f32>) {
         real_buff[i] = {
             let mut out = 0.0;
             for j in 0..FILTER_WINDOW_SIZE {
-                let b_ij = match board.contains(&(i as i32, j as i32)) {
-                    true => 1.0,
-                    false => -1.0,
+                let b_ij = match (board.contains(&(i as i32, j as i32)), i % 2 == 0) {
+                    (true, true) => 1.0,
+                    (true, false) => -1.0,
+                    _ => 0.0,
                 };
-                let b_ji = match board.contains(&(j as i32, i as i32)) {
-                    true => 1.0,
-                    false => -1.0,
+                let b_ji = match (board.contains(&(j as i32, i as i32)), i % 2 == 0) {
+                    (true, true) => 1.0,
+                    (true, false) => -1.0,
+                    _ => 0.0,
                 };
 
                 out += b_ij + b_ji;

@@ -17,8 +17,6 @@ use rand::SeedableRng;
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
-const thing: [Complex<f32>; 50] = [Complex { im: 0.0, re: 0.0 }; 50];
-
 struct Automata {
     params: Arc<AutomataParams>,
 
@@ -28,9 +26,10 @@ struct Automata {
     stft: util::StftHelper,
 
     comp_buff: Vec<Complex<f32>>,
-    real_buff: Vec<f32>,
+    game_real_buff: Vec<f32>,
+    game_comp_buff: Vec<Complex<f32>>,
+    test_comp_buff: Vec<Complex<f32>>,
 
-    current_ir: Vec<Complex<f32>>,
     current_board: HashSet<(i32, i32)>,
     dying_buff: Vec<(i32, i32)>,
     born_buff: Vec<(i32, i32)>,
@@ -47,30 +46,34 @@ struct AutomataParams {
 
 impl Default for Automata {
     fn default() -> Self {
+        nih_log!("doing default");
+
         let mut planner = RealFftPlanner::new();
         let fft = planner.plan_fft_forward(FFT_WINDOW_SIZE);
         let ifft = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
 
-        let mut comp_buff = ifft.make_input_vec();
-        let mut real_buff = fft.make_input_vec();
+        let comp_buff = ifft.make_input_vec();
+        let mut game_real_buff = fft.make_input_vec();
+        let mut game_comp_buff = fft.make_output_vec();
 
         let mut current_board: HashSet<(i32, i32)> =
             HashSet::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
         let mut rng = SmallRng::seed_from_u64(SEED);
-        let born_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
-        let dying_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
+        let mut born_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
+        let mut dying_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
 
         build_random(&mut current_board, &mut rng);
-        build_ir(&mut current_board, &mut real_buff);
 
-        fft.process_with_scratch(&mut real_buff, &mut comp_buff, &mut [])
+        build_ir(&mut current_board, &mut game_real_buff);
+
+        fft.process_with_scratch(&mut game_real_buff, &mut game_comp_buff, &mut [])
             .unwrap();
 
         Self {
             params: Arc::new(AutomataParams::default()),
 
-            current_ir: comp_buff.clone(),
             current_board: HashSet::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE),
+            test_comp_buff: ifft.make_input_vec(),
 
             fft,
             ifft,
@@ -78,7 +81,8 @@ impl Default for Automata {
             stft: util::StftHelper::new(2, WINDOW_SIZE, FFT_WINDOW_SIZE - WINDOW_SIZE),
 
             comp_buff,
-            real_buff,
+            game_real_buff,
+            game_comp_buff,
             born_buff,
             dying_buff,
         }
@@ -181,14 +185,13 @@ impl Plugin for Automata {
                 &mut self.current_board,
                 &mut self.born_buff,
                 &mut self.dying_buff,
-                &mut self.real_buff,
             );
 
-            self.fft
-                .process_with_scratch(&mut self.real_buff, &mut self.comp_buff, &mut [])
-                .unwrap();
+            build_ir(&mut self.current_board, &mut self.game_real_buff);
 
-            assert!(self.comp_buff.len() == self.current_ir.len());
+            self.fft
+                .process_with_scratch(&mut self.game_real_buff, &mut self.test_comp_buff, &mut [])
+                .unwrap();
         }
 
         self.stft
@@ -197,7 +200,7 @@ impl Plugin for Automata {
                     .process_with_scratch(real_buff, &mut self.comp_buff, &mut [])
                     .unwrap();
 
-                for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.current_ir) {
+                for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.game_comp_buff) {
                     *fft_bin *= *kernel_bin * GAIN_COMP;
                 }
 
