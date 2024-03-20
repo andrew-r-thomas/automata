@@ -17,6 +17,8 @@ use rand::SeedableRng;
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
 
+const thing: [Complex<f32>; 50] = [Complex { im: 0.0, re: 0.0 }; 50];
+
 struct Automata {
     params: Arc<AutomataParams>,
 
@@ -135,7 +137,6 @@ impl Plugin for Automata {
     }
 
     fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        // TODO we might not want to do this in the editor funtion
         let e = editor::create(
             self.params.clone(),
             self.params.editor_state.clone(),
@@ -187,11 +188,7 @@ impl Plugin for Automata {
                 .process_with_scratch(&mut self.real_buff, &mut self.comp_buff, &mut [])
                 .unwrap();
 
-            let filter_len = self.current_ir.len();
-
-            self.current_ir[0..filter_len].copy_from_slice(&self.comp_buff[0..filter_len]);
-
-            self.comp_buff.clear();
+            assert!(self.comp_buff.len() == self.current_ir.len());
         }
 
         self.stft
@@ -213,17 +210,6 @@ impl Plugin for Automata {
     }
 }
 
-// NOTE just testing this
-impl ClapPlugin for Automata {
-    const CLAP_ID: &'static str = "com.diy!studios.automata";
-    const CLAP_DESCRIPTION: Option<&'static str> = Some("A short description of your plugin");
-    const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
-    const CLAP_SUPPORT_URL: Option<&'static str> = None;
-
-    // Don't forget to change these features
-    const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo];
-}
-
 impl Vst3Plugin for Automata {
     const VST3_CLASS_ID: [u8; 16] = *b"diy!studios_auto";
 
@@ -233,5 +219,4 @@ impl Vst3Plugin for Automata {
         &[Vst3SubCategory::Fx, Vst3SubCategory::Dynamics];
 }
 
-// nih_export_clap!(Automata);
 nih_export_vst3!(Automata);
