@@ -5,6 +5,7 @@ use std::sync::Arc;
 use nih_plug::editor::Editor;
 use nih_plug::prelude::AsyncExecutor;
 use nih_plug_vizia::vizia::prelude::*;
+use nih_plug_vizia::widgets::ParamButton;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
 #[derive(Lens)]
@@ -54,16 +55,7 @@ pub(crate) fn create(
                 .height(Pixels(50.0))
                 .child_top(Stretch(1.0))
                 .child_bottom(Pixels(0.0));
-            Button::new(
-                cx,
-                |ex| ex.emit(GUIEvent::PlayPause),
-                |cx| Label::new(cx, "play/pause"),
-            );
-            Button::new(
-                cx,
-                |ex| ex.emit(GUIEvent::Reset),
-                |cx| Label::new(cx, "reset"),
-            );
+            ParamButton::new(cx, Data::params, |p| &p.running);
         })
         .row_between(Pixels(0.0))
         .child_left(Stretch(1.0))
