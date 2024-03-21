@@ -11,13 +11,13 @@ pub fn find_neighbors(pos: &(i32, i32)) -> [(i32, i32); 8] {
         for y in -1..2 {
             if x != 0 || y != 0 {
                 let true_x = match () {
-                    _ if pos.0 + x > 64 => x,
-                    _ if pos.0 + x < 0 => 64 - x,
+                    _ if pos.0 + x > FILTER_WINDOW_SIZE as i32 => x,
+                    _ if pos.0 + x < 0 => FILTER_WINDOW_SIZE as i32 - x,
                     _ => pos.0 + x,
                 };
                 let true_y = match () {
-                    _ if pos.1 + y > 64 => y,
-                    _ if pos.1 + y < 0 => 64 - y,
+                    _ if pos.1 + y > FILTER_WINDOW_SIZE as i32 => y,
+                    _ if pos.1 + y < 0 => FILTER_WINDOW_SIZE as i32 - y,
                     _ => pos.1 + y,
                 };
 
