@@ -60,11 +60,15 @@ impl Default for Automata {
         let mut dying_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
 
         build_random(&mut current_board, &mut rng);
+        let mut scratch = fft.make_scratch_vec();
 
-        build_ir(&current_board, &mut game_real_buff);
+        for _ in 0..10 {
+            step(&mut current_board, &mut born_buff, &mut dying_buff);
 
-        fft.process_with_scratch(&mut game_real_buff, &mut game_comp_buff, &mut [])
-            .unwrap();
+            build_ir(&current_board, &mut game_real_buff);
+            fft.process_with_scratch(&mut game_real_buff, &mut game_comp_buff, &mut scratch)
+                .unwrap();
+        }
 
         Self {
             params: Arc::new(AutomataParams::default()),
