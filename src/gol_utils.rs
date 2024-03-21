@@ -104,4 +104,10 @@ pub fn build_ir(board: &HashSet<(i32, i32)>, real_buff: &mut Vec<f32>) {
             out
         }
     }
+
+    let filter_normalization_factor = real_buff.iter().sum::<f32>().recip();
+
+    for sample in real_buff {
+        *sample *= filter_normalization_factor;
+    }
 }

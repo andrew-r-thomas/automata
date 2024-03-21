@@ -15,7 +15,7 @@ use nih_plug_vizia::ViziaState;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use realfft::num_complex::Complex;
-use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
+use realfft::{ComplexToReal, FftError, RealFftPlanner, RealToComplex};
 
 struct Automata {
     params: Arc<AutomataParams>,
@@ -45,8 +45,6 @@ struct AutomataParams {
 
 impl Default for Automata {
     fn default() -> Self {
-        nih_log!("doing default");
-
         let mut planner = RealFftPlanner::new();
         let fft = planner.plan_fft_forward(FFT_WINDOW_SIZE);
         let ifft = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
@@ -67,8 +65,6 @@ impl Default for Automata {
 
         fft.process_with_scratch(&mut game_real_buff, &mut game_comp_buff, &mut [])
             .unwrap();
-
-        game_real_buff.clear();
 
         Self {
             params: Arc::new(AutomataParams::default()),
@@ -155,8 +151,6 @@ impl Plugin for Automata {
         _buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
-        nih_log!("initializing");
-
         // Resize buffers and perform other potentially expensive initialization operations here.
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
@@ -178,35 +172,65 @@ impl Plugin for Automata {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        nih_log!("doing a process block");
-
         if self.params.running.value() {
-            // step(
-            //     &mut self.current_board,
-            //     &mut self.born_buff,
-            //     &mut self.dying_buff,
-            // );
+            step(
+                &mut self.current_board,
+                &mut self.born_buff,
+                &mut self.dying_buff,
+            );
 
-            // build_ir(&mut self.current_board, &mut self.game_real_buff);
+            build_ir(&self.current_board, &mut self.game_real_buff);
 
-            // self.fft
-            //     .process_with_scratch(&mut self.game_real_buff, &mut self.game_comp_buff, &mut [])
-            //     .unwrap();
+            match self.fft.process_with_scratch(
+                &mut self.game_real_buff,
+                &mut self.game_comp_buff,
+                &mut [],
+            ) {
+                Ok(_) => {}
+                Err(_e) => {
+                    nih_log!("game fft error");
+                    panic!()
+                }
+            };
         }
 
         self.stft
             .process_overlap_add(buffer, 1, |_channel, real_buff| {
-                self.fft
+                match self
+                    .fft
                     .process_with_scratch(real_buff, &mut self.comp_buff, &mut [])
-                    .unwrap();
+                {
+                    Ok(_) => {}
+                    Err(_e) => {
+                        nih_log!("audio fft error");
+                        panic!()
+                    }
+                };
 
                 for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.game_comp_buff) {
                     *fft_bin *= *kernel_bin * GAIN_COMP;
                 }
 
-                self.ifft
+                match self
+                    .ifft
                     .process_with_scratch(&mut self.comp_buff, real_buff, &mut [])
-                    .unwrap();
+                {
+                    Ok(_) => {}
+                    Err(e) => match e {
+                        FftError::InputBuffer(_, _) => {
+                            nih_log!("ifft error: input buffer");
+                        }
+                        FftError::OutputBuffer(_, _) => {
+                            nih_log!("ifft error: output buffer");
+                        }
+                        FftError::ScratchBuffer(_, _) => {
+                            nih_log!("ifft error: scratch buffer");
+                        }
+                        FftError::InputValues(_, _) => {
+                            nih_log!("ifft error: input values");
+                        }
+                    },
+                };
             });
 
         ProcessStatus::Normal
