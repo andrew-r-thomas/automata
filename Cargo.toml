@@ -8,7 +8,7 @@ homepage = "https://andrewrthomas.com"
 description = "A short description of your plugin"
 
 [workspace]
-members = ["xtask"]
+members = ["xtask", "piston_gol"]
 
 [lib]
 crate-type = ["cdylib"]

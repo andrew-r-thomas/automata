@@ -1,5 +1,6 @@
 [alias]
 xtask = "run --package xtask --release --"
+yeet = "xtask bundle automata"
 
 [env]
-NIH_LOG = {value = "../log.md", relative = true}
+NIH_LOG = "/Users/andrewthomas/diy!/automata/log.md"

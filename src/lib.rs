@@ -1,37 +1,24 @@
-// TODO for some reason we are crashing when using the
-// game board, it's probably some sizing stuff being wrong
-// because we are trying to fit the spectrum into the filter
-// and doing it incorrectly
-// it could also be not doing the normalizing, which
-// probably should be done game side
-
+pub mod consts;
 pub mod editor;
+pub mod gol_utils;
 
+use crate::gol_utils::{build_random, step};
 use std::collections::HashSet;
 use std::sync::Arc;
 
-use editor::{build_ir, build_random};
+use consts::*;
+
+use editor::GUIEvent;
+use gol_utils::build_ir;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
-use rand::{Rng, SeedableRng};
+use rand::rngs::SmallRng;
+use rand::SeedableRng;
 use realfft::num_complex::Complex;
-use realfft::{ComplexToReal, RealFftPlanner, RealToComplex};
-use rtrb::*;
-
-const WINDOW_SIZE: usize = 64;
-const FILTER_WINDOW_SIZE: usize = 33;
-const GAME_BOARD_SIZE: usize = (FFT_WINDOW_SIZE / 2) + 1;
-pub const SMOOVE: [f32; FILTER_WINDOW_SIZE] =
-    [1 as f32 / FILTER_WINDOW_SIZE as f32; FILTER_WINDOW_SIZE];
-const FFT_WINDOW_SIZE: usize = WINDOW_SIZE + FILTER_WINDOW_SIZE + 1;
-
-const GAIN_COMP: f32 = 1.0 / FFT_WINDOW_SIZE as f32;
+use realfft::{ComplexToReal, FftError, RealFftPlanner, RealToComplex};
 
 struct Automata {
     params: Arc<AutomataParams>,
-
-    _ir_consumer: Option<Consumer<Complex<f32>>>,
-    current_ir: Vec<Complex<f32>>,
 
     fft: Arc<dyn RealToComplex<f32>>,
     ifft: Arc<dyn ComplexToReal<f32>>,
@@ -39,10 +26,19 @@ struct Automata {
     stft: util::StftHelper,
 
     comp_buff: Vec<Complex<f32>>,
+    game_real_buff: Vec<f32>,
+    game_comp_buff: Vec<Complex<f32>>,
+
+    current_board: HashSet<(i32, i32)>,
+    dying_buff: Vec<(i32, i32)>,
+    born_buff: Vec<(i32, i32)>,
 }
 
 #[derive(Params)]
 struct AutomataParams {
+    #[id = "running"]
+    running: BoolParam,
+
     #[persist = "editor-state"]
     editor_state: Arc<ViziaState>,
 }
@@ -50,68 +46,41 @@ struct AutomataParams {
 impl Default for Automata {
     fn default() -> Self {
         let mut planner = RealFftPlanner::new();
-        let real_to_complex = planner.plan_fft_forward(FFT_WINDOW_SIZE);
-        let complex_to_real = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
+        let fft = planner.plan_fft_forward(FFT_WINDOW_SIZE);
+        let ifft = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
 
-        let mut comp_buff = real_to_complex.make_output_vec();
-        let mut real_buff = real_to_complex.make_input_vec();
+        let comp_buff = ifft.make_input_vec();
+        let mut game_real_buff = fft.make_input_vec();
+        let mut game_comp_buff = fft.make_output_vec();
 
-        let mut rng = rand::rngs::SmallRng::seed_from_u64(42);
-        let mut alive_cells =
-            HashSet::<(i32, i32)>::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
-        build_random(&mut alive_cells, &mut rng, FILTER_WINDOW_SIZE);
+        let mut current_board: HashSet<(i32, i32)> =
+            HashSet::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
+        let mut rng = SmallRng::seed_from_u64(SEED);
+        let mut born_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
+        let mut dying_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
 
-        let mut ir: Vec<f32> = vec![0.0; FILTER_WINDOW_SIZE];
-        for i in 0..FILTER_WINDOW_SIZE {
-            ir[i] = {
-                let mut out = 0.0;
-                for j in 0..FILTER_WINDOW_SIZE {
-                    let b_ij = {
-                        if alive_cells.contains(&(i as i32, j as i32)) {
-                            1.0
-                        } else {
-                            -1.0
-                        }
-                    };
-                    let b_ji = {
-                        if alive_cells.contains(&(j as i32, i as i32)) {
-                            1.0
-                        } else {
-                            -1.0
-                        }
-                    };
+        build_random(&mut current_board, &mut rng);
 
-                    out += b_ij + b_ji;
-                }
+        build_ir(&current_board, &mut game_real_buff);
 
-                out /= FILTER_WINDOW_SIZE as f32;
-                out
-            }
-        }
-
-        // let filter_normalization_factor = rand_vec.iter().sum::<f32>().recip();
-        // for sample in &mut rand_vec {
-        //     *sample *= filter_normalization_factor;
-        // }
-
-        real_buff[0..FILTER_WINDOW_SIZE].copy_from_slice(&ir[0..FILTER_WINDOW_SIZE]);
-
-        real_to_complex
-            .process_with_scratch(&mut real_buff, &mut comp_buff, &mut [])
+        fft.process_with_scratch(&mut game_real_buff, &mut game_comp_buff, &mut [])
             .unwrap();
 
         Self {
             params: Arc::new(AutomataParams::default()),
 
-            _ir_consumer: None,
-            current_ir: comp_buff.clone(),
+            current_board: HashSet::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE),
 
-            fft: real_to_complex,
-            ifft: complex_to_real,
+            fft,
+            ifft,
 
             stft: util::StftHelper::new(2, WINDOW_SIZE, FFT_WINDOW_SIZE - WINDOW_SIZE),
 
             comp_buff,
+            game_real_buff,
+            game_comp_buff,
+            born_buff,
+            dying_buff,
         }
     }
 }
@@ -120,6 +89,7 @@ impl Default for AutomataParams {
     fn default() -> Self {
         Self {
             editor_state: editor::default_state(),
+            running: BoolParam::new("running", false),
         }
     }
 }
@@ -159,17 +129,19 @@ impl Plugin for Automata {
     // More advanced plugins can use this to run expensive background tasks. See the field's
     // documentation for more information. `()` means that the plugin does not have any background
     // tasks.
-    type BackgroundTask = ();
+
+    type BackgroundTask = GUIEvent;
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
     }
 
-    fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        // TODO we might not want to do this in the editor funtion
-        nih_log!("we are trying to make editor");
-        let e = editor::create(self.params.clone(), self.params.editor_state.clone());
-        // self.ir_consumer = Some(cons);
+    fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+        let e = editor::create(
+            self.params.clone(),
+            self.params.editor_state.clone(),
+            async_executor.clone(),
+        );
         e
     }
 
@@ -179,8 +151,6 @@ impl Plugin for Automata {
         _buffer_config: &BufferConfig,
         context: &mut impl InitContext<Self>,
     ) -> bool {
-        nih_log!("initializing");
-
         // Resize buffers and perform other potentially expensive initialization operations here.
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
@@ -202,57 +172,69 @@ impl Plugin for Automata {
         _aux: &mut AuxiliaryBuffers,
         _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        nih_log!("doing a process block");
+        if self.params.running.value() {
+            step(
+                &mut self.current_board,
+                &mut self.born_buff,
+                &mut self.dying_buff,
+            );
 
-        // TODO figure out how to handle panic here
-        // match self.ir_consumer.as_mut() {
-        //     Some(c) => match c.read_chunk(DEFAULT_IR_SPECTRUM_SIZE) {
-        //         Ok(ir) => {
-        //             let slices = ir.as_slices();
-        //             self.current_ir[0..slices.0.len()].copy_from_slice(slices.0);
-        //             self.current_ir[slices.0.len()..slices.0.len() + slices.1.len()]
-        //                 .copy_from_slice(slices.1);
-        //             ir.commit_all()
-        //         }
-        //         Err(e) => {
-        //             nih_log!("{}", e);
-        //         }
-        //     },
-        //     None => {
-        //         nih_log!("no ir buff");
-        //         return ProcessStatus::Normal;
-        //     }
-        // }
+            build_ir(&self.current_board, &mut self.game_real_buff);
+
+            match self.fft.process_with_scratch(
+                &mut self.game_real_buff,
+                &mut self.game_comp_buff,
+                &mut [],
+            ) {
+                Ok(_) => {}
+                Err(_e) => {
+                    nih_log!("game fft error");
+                    panic!()
+                }
+            };
+        }
 
         self.stft
             .process_overlap_add(buffer, 1, |_channel, real_buff| {
-                self.fft
+                match self
+                    .fft
                     .process_with_scratch(real_buff, &mut self.comp_buff, &mut [])
-                    .unwrap();
+                {
+                    Ok(_) => {}
+                    Err(_e) => {
+                        nih_log!("audio fft error");
+                        panic!()
+                    }
+                };
 
-                for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.current_ir) {
+                for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.game_comp_buff) {
                     *fft_bin *= *kernel_bin * GAIN_COMP;
                 }
 
-                self.ifft
+                match self
+                    .ifft
                     .process_with_scratch(&mut self.comp_buff, real_buff, &mut [])
-                    .unwrap();
+                {
+                    Ok(_) => {}
+                    Err(e) => match e {
+                        FftError::InputBuffer(_, _) => {
+                            nih_log!("ifft error: input buffer");
+                        }
+                        FftError::OutputBuffer(_, _) => {
+                            nih_log!("ifft error: output buffer");
+                        }
+                        FftError::ScratchBuffer(_, _) => {
+                            nih_log!("ifft error: scratch buffer");
+                        }
+                        FftError::InputValues(_, _) => {
+                            nih_log!("ifft error: input values");
+                        }
+                    },
+                };
             });
 
-        // // TODO do process status stuff for reverb tail
         ProcessStatus::Normal
     }
-}
-
-// NOTE just testing this
-impl ClapPlugin for Automata {
-    const CLAP_ID: &'static str = "com.diy!studios.automata";
-    const CLAP_DESCRIPTION: Option<&'static str> = Some("A short description of your plugin");
-    const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
-    const CLAP_SUPPORT_URL: Option<&'static str> = None;
-
-    // Don't forget to change these features
-    const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo];
 }
 
 impl Vst3Plugin for Automata {
@@ -264,5 +246,4 @@ impl Vst3Plugin for Automata {
         &[Vst3SubCategory::Fx, Vst3SubCategory::Dynamics];
 }
 
-// nih_export_clap!(Automata);
 nih_export_vst3!(Automata);
