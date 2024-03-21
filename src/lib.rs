@@ -28,7 +28,6 @@ struct Automata {
     comp_buff: Vec<Complex<f32>>,
     game_real_buff: Vec<f32>,
     game_comp_buff: Vec<Complex<f32>>,
-    test_comp_buff: Vec<Complex<f32>>,
 
     current_board: HashSet<(i32, i32)>,
     dying_buff: Vec<(i32, i32)>,
@@ -64,16 +63,17 @@ impl Default for Automata {
 
         build_random(&mut current_board, &mut rng);
 
-        build_ir(&mut current_board, &mut game_real_buff);
+        build_ir(&current_board, &mut game_real_buff);
 
         fft.process_with_scratch(&mut game_real_buff, &mut game_comp_buff, &mut [])
             .unwrap();
+
+        game_real_buff.clear();
 
         Self {
             params: Arc::new(AutomataParams::default()),
 
             current_board: HashSet::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE),
-            test_comp_buff: ifft.make_input_vec(),
 
             fft,
             ifft,
@@ -181,17 +181,17 @@ impl Plugin for Automata {
         nih_log!("doing a process block");
 
         if self.params.running.value() {
-            step(
-                &mut self.current_board,
-                &mut self.born_buff,
-                &mut self.dying_buff,
-            );
+            // step(
+            //     &mut self.current_board,
+            //     &mut self.born_buff,
+            //     &mut self.dying_buff,
+            // );
 
-            build_ir(&mut self.current_board, &mut self.game_real_buff);
+            // build_ir(&mut self.current_board, &mut self.game_real_buff);
 
-            self.fft
-                .process_with_scratch(&mut self.game_real_buff, &mut self.test_comp_buff, &mut [])
-                .unwrap();
+            // self.fft
+            //     .process_with_scratch(&mut self.game_real_buff, &mut self.game_comp_buff, &mut [])
+            //     .unwrap();
         }
 
         self.stft

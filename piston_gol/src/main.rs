@@ -32,14 +32,12 @@ impl App {
             clear(BLACK, gl);
 
             for cell in &self.current_board {
-                println!("drawing cell: {:?}\n", cell);
-
                 let (x, y) = (
                     (args.window_size[0] / 4 as f64) + cell.0 as f64 * 12.0,
                     (args.window_size[1] / 4 as f64) + cell.1 as f64 * 12.0,
                 );
 
-                let transform = c.transform.trans(x, y).trans(-25.0, -25.0);
+                let transform = c.transform.trans(x, y);
 
                 // Draw a box rotating around the middle of the screen.
                 rectangle(WHITE, square, transform, gl);
@@ -70,7 +68,23 @@ fn main() {
     let mut current_board = HashSet::with_capacity(64 * 64);
     let mut rng = SmallRng::seed_from_u64(69);
 
-    build_random(&mut current_board, &mut rng);
+    // build_random(&mut current_board, &mut rng);
+    const EXPLODE: [(i32, i32); 10] = [
+        (30, 30),
+        (30, 31),
+        (30, 32),
+        (30, 33),
+        (30, 34),
+        (30, 35),
+        (29, 32),
+        (29, 33),
+        (28, 31),
+        (28, 34),
+    ];
+
+    for cell in EXPLODE {
+        current_board.insert(cell);
+    }
 
     // Create a new game and run it.
     let mut app = App {
@@ -148,7 +162,19 @@ pub fn find_neighbors(pos: &(i32, i32)) -> [(i32, i32); 8] {
     for x in -1..2 {
         for y in -1..2 {
             if x != 0 || y != 0 {
-                neighbors[i] = (pos.0 + x, pos.1 + y);
+                let true_x = match () {
+                    _ if pos.0 + x > 64 => x,
+                    _ if pos.0 + x < 0 => 64 - x,
+                    _ => pos.0 + x,
+                };
+                let true_y = match () {
+                    _ if pos.1 + y > 64 => y,
+                    _ if pos.1 + y < 0 => 64 - y,
+                    _ => pos.1 + y,
+                };
+
+                neighbors[i] = (true_x, true_y);
+                // neighbors[i] = (pos.0 + x, pos.1 + y);
                 i += 1;
             }
         }

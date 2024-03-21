@@ -10,7 +10,18 @@ pub fn find_neighbors(pos: &(i32, i32)) -> [(i32, i32); 8] {
     for x in -1..2 {
         for y in -1..2 {
             if x != 0 || y != 0 {
-                neighbors[i] = (pos.0 + x, pos.1 + y);
+                let true_x = match () {
+                    _ if pos.0 + x > 64 => x,
+                    _ if pos.0 + x < 0 => 64 - x,
+                    _ => pos.0 + x,
+                };
+                let true_y = match () {
+                    _ if pos.1 + y > 64 => y,
+                    _ if pos.1 + y < 0 => 64 - y,
+                    _ => pos.1 + y,
+                };
+
+                neighbors[i] = (true_x, true_y);
                 i += 1;
             }
         }
@@ -70,7 +81,7 @@ pub fn step(
     born.clear();
 }
 
-pub fn build_ir(board: &mut HashSet<(i32, i32)>, real_buff: &mut Vec<f32>) {
+pub fn build_ir(board: &HashSet<(i32, i32)>, real_buff: &mut Vec<f32>) {
     for i in 0..FILTER_WINDOW_SIZE {
         real_buff[i] = {
             let mut out = 0.0;
