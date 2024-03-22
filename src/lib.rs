@@ -56,19 +56,13 @@ impl Default for Automata {
         let mut current_board: HashSet<(i32, i32)> =
             HashSet::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
         let mut rng = SmallRng::seed_from_u64(SEED);
-        let mut born_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
-        let mut dying_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
+        let born_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
+        let dying_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
 
         build_random(&mut current_board, &mut rng);
-        let mut scratch = fft.make_scratch_vec();
-
-        for _ in 0..10 {
-            step(&mut current_board, &mut born_buff, &mut dying_buff);
-
-            build_ir(&current_board, &mut game_real_buff);
-            fft.process_with_scratch(&mut game_real_buff, &mut game_comp_buff, &mut scratch)
-                .unwrap();
-        }
+        build_ir(&current_board, &mut game_real_buff);
+        fft.process_with_scratch(&mut game_real_buff, &mut game_comp_buff, &mut [])
+            .unwrap();
 
         Self {
             params: Arc::new(AutomataParams::default()),
@@ -196,6 +190,8 @@ impl Plugin for Automata {
                     panic!()
                 }
             };
+
+            self.game_real_buff.fill(0.0);
         }
 
         self.stft
