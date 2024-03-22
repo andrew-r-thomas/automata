@@ -8,14 +8,15 @@ use std::sync::Arc;
 
 use consts::*;
 
-use editor::GUIEvent;
 use gol_utils::build_ir;
 use nih_plug::prelude::*;
+use nih_plug_vizia::vizia::style::BackgroundImage;
 use nih_plug_vizia::ViziaState;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, FftError, RealFftPlanner, RealToComplex};
+use rtrb::{Consumer, Producer};
 
 struct Automata {
     params: Arc<AutomataParams>,
@@ -32,6 +33,13 @@ struct Automata {
     current_board: HashSet<(i32, i32)>,
     dying_buff: Vec<(i32, i32)>,
     born_buff: Vec<(i32, i32)>,
+
+    prod: Producer<f32>,
+    cons: Consumer<f32>,
+}
+
+enum Tasks {
+    CalcStep,
 }
 
 #[derive(Params)]
@@ -56,13 +64,20 @@ impl Default for Automata {
         let mut current_board: HashSet<(i32, i32)> =
             HashSet::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
         let mut rng = SmallRng::seed_from_u64(SEED);
-        let born_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
-        let dying_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
+        let mut born_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
+        let mut dying_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
 
         build_random(&mut current_board, &mut rng);
+        // for _ in 0..1000 {
+        //     step(&mut current_board, &mut born_buff, &mut dying_buff);
         build_ir(&current_board, &mut game_real_buff);
-        fft.process_with_scratch(&mut game_real_buff, &mut game_comp_buff, &mut [])
-            .unwrap();
+
+        match fft.process_with_scratch(&mut game_real_buff, &mut game_comp_buff, &mut []) {
+            Ok(_) => {}
+            Err(_) => nih_log!("error in default fft"),
+        };
+        // }
+        let (prod, cons) = rtrb::RingBuffer::<f32>::new(FILTER_WINDOW_SIZE * 3);
 
         Self {
             params: Arc::new(AutomataParams::default()),
@@ -79,6 +94,9 @@ impl Default for Automata {
             game_comp_buff,
             born_buff,
             dying_buff,
+
+            prod,
+            cons,
         }
     }
 }
@@ -128,7 +146,20 @@ impl Plugin for Automata {
     // documentation for more information. `()` means that the plugin does not have any background
     // tasks.
 
-    type BackgroundTask = GUIEvent;
+    type BackgroundTask = Tasks;
+
+    fn task_executor(&mut self) -> TaskExecutor<Self> {
+        Box::new(|task: Tasks| match task {
+            Tasks::CalcStep => match self.prod.write_chunk(1) {
+                Ok(mut p) => {
+                    let (s_1, s_2) = p.as_mut_slices();
+                    s_1[0] = 2.0;
+                    p.commit_all();
+                }
+                Err(_) => nih_log!("error writing chunk in prod"),
+            },
+        })
+    }
 
     fn params(&self) -> Arc<dyn Params> {
         self.params.clone()
@@ -230,11 +261,6 @@ impl Plugin for Automata {
                     },
                 };
             });
-
-        // if self.params.running.value() {
-        //     self.game_real_buff.fill(0.0);
-        //     self.game_comp_buff.fill(Complex { re: 0.0, im: 0.0 });
-        // }
 
         ProcessStatus::Normal
     }

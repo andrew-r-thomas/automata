@@ -82,6 +82,8 @@ pub fn step(
 }
 
 pub fn build_ir(board: &HashSet<(i32, i32)>, real_buff: &mut Vec<f32>) {
+    real_buff.fill(0.0);
+
     for i in 0..FILTER_WINDOW_SIZE {
         real_buff[i] = {
             let mut out = 0.0;
