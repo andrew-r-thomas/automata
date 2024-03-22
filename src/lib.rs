@@ -190,8 +190,6 @@ impl Plugin for Automata {
                     panic!()
                 }
             };
-
-            self.game_real_buff.fill(0.0);
         }
 
         self.stft
@@ -232,6 +230,11 @@ impl Plugin for Automata {
                     },
                 };
             });
+
+        // if self.params.running.value() {
+        //     self.game_real_buff.fill(0.0);
+        //     self.game_comp_buff.fill(Complex { re: 0.0, im: 0.0 });
+        // }
 
         ProcessStatus::Normal
     }
