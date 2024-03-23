@@ -53,7 +53,7 @@ impl GOL {
                 let len2 = s2.len();
 
                 s1.copy_from_slice(&gol.comp_buff[0..len1]);
-                s2.copy_from_slice(&gol.comp_buff[0..len2]);
+                s2.copy_from_slice(&gol.comp_buff[len1..len1 + len2]);
 
                 p.commit_all();
             }
@@ -61,6 +61,12 @@ impl GOL {
         }
 
         gol
+    }
+
+    pub fn start(&mut self, len: usize) {
+        for _ in 0..len {
+            self.advance();
+        }
     }
 
     pub fn advance(&mut self) {

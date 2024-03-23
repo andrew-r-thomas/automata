@@ -29,7 +29,7 @@ struct Automata {
 }
 
 enum Tasks {
-    CalcStep,
+    Run(usize),
 }
 
 #[derive(Params)]
@@ -111,15 +111,15 @@ impl Plugin for Automata {
     type BackgroundTask = Tasks;
 
     fn task_executor(&mut self) -> TaskExecutor<Self> {
-        let (prod, cons) = RingBuffer::<Complex<f32>>::new(self.game_comp_buff.len() * 3);
+        let (prod, cons) = RingBuffer::<Complex<f32>>::new(self.game_comp_buff.len() * 1000);
         let gol = GOL::new(prod, FILTER_WINDOW_SIZE, FFT_WINDOW_SIZE, SEED);
         let protec = Arc::new(Mutex::new(gol));
 
         self.cons = Some(cons);
 
         Box::new(move |task: Tasks| match task {
-            Tasks::CalcStep => match protec.try_lock() {
-                Ok(mut gol_lock) => gol_lock.advance(),
+            Tasks::Run(x) => match protec.try_lock() {
+                Ok(mut gol_lock) => gol_lock.start(x),
                 Err(_) => nih_log!("error taking lock"),
             },
         })
@@ -163,12 +163,8 @@ impl Plugin for Automata {
         &mut self,
         buffer: &mut Buffer,
         _aux: &mut AuxiliaryBuffers,
-        context: &mut impl ProcessContext<Self>,
+        _context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        if self.params.running.value() {
-            context.execute_background(Tasks::CalcStep);
-        }
-
         match self
             .cons
             .as_mut()
@@ -180,12 +176,14 @@ impl Plugin for Automata {
                 let len1 = s1.len();
                 let len2 = s2.len();
 
+                self.game_comp_buff.fill(Complex { re: 0.0, im: 0.0 });
+
                 self.game_comp_buff[0..len1].copy_from_slice(s1);
-                self.game_comp_buff[0..len2].copy_from_slice(s2);
+                self.game_comp_buff[len1..len1 + len2].copy_from_slice(s2);
 
                 c.commit_all();
             }
-            Err(_) => nih_log!("error reading chunk"),
+            Err(_) => {}
         }
 
         self.stft
@@ -220,8 +218,14 @@ impl Plugin for Automata {
                         FftError::ScratchBuffer(_, _) => {
                             nih_log!("ifft error: scratch buffer");
                         }
-                        FftError::InputValues(_, _) => {
-                            nih_log!("ifft error: input values");
+                        FftError::InputValues(first, last) => {
+                            nih_log!("ifft input values error");
+                            if first {
+                                nih_log!("first bad")
+                            }
+                            if last {
+                                nih_log!("last bad")
+                            }
                         }
                     },
                 };

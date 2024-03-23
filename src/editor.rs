@@ -1,11 +1,10 @@
-use crate::{Automata, AutomataParams};
+use crate::{Automata, AutomataParams, Tasks};
 
 use std::sync::Arc;
 
 use nih_plug::editor::Editor;
 use nih_plug::prelude::AsyncExecutor;
 use nih_plug_vizia::vizia::prelude::*;
-use nih_plug_vizia::widgets::ParamButton;
 use nih_plug_vizia::{assets, create_vizia_editor, ViziaState, ViziaTheming};
 
 #[derive(Lens)]
@@ -19,7 +18,14 @@ pub enum GUIEvent {
     Reset,
 }
 
-impl Model for Data {}
+impl Model for Data {
+    fn event(&mut self, _cx: &mut EventContext, event: &mut Event) {
+        event.map(|e, _| match e {
+            GUIEvent::PlayPause => self.executor.execute_background(Tasks::Run(1)),
+            _ => {}
+        })
+    }
+}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {
@@ -48,7 +54,11 @@ pub(crate) fn create(
                 .height(Pixels(50.0))
                 .child_top(Stretch(1.0))
                 .child_bottom(Pixels(0.0));
-            ParamButton::new(cx, Data::params, |p| &p.running);
+            Button::new(
+                cx,
+                |ex| ex.emit(GUIEvent::PlayPause),
+                |cx| Label::new(cx, "step"),
+            );
         })
         .row_between(Pixels(0.0))
         .child_left(Stretch(1.0))
