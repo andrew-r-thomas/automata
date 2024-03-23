@@ -19,14 +19,7 @@ pub enum GUIEvent {
     Reset,
 }
 
-impl Model for Data {
-    fn event(&mut self, _: &mut EventContext, event: &mut Event) {
-        event.map(|gui_event: &GUIEvent, _| match gui_event {
-            GUIEvent::PlayPause => self.executor.execute_background(GUIEvent::PlayPause),
-            GUIEvent::Reset => self.executor.execute_background(GUIEvent::Reset),
-        });
-    }
-}
+impl Model for Data {}
 
 // Makes sense to also define this here, makes it a bit easier to keep track of
 pub(crate) fn default_state() -> Arc<ViziaState> {

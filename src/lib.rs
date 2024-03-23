@@ -4,19 +4,18 @@ pub mod gol_utils;
 
 use crate::gol_utils::{build_random, step};
 use std::collections::HashSet;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use consts::*;
 
 use gol_utils::build_ir;
 use nih_plug::prelude::*;
-use nih_plug_vizia::vizia::style::BackgroundImage;
 use nih_plug_vizia::ViziaState;
 use rand::rngs::SmallRng;
 use rand::SeedableRng;
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, FftError, RealFftPlanner, RealToComplex};
-use rtrb::{Consumer, Producer};
+use rtrb::{Consumer, RingBuffer};
 
 struct Automata {
     params: Arc<AutomataParams>,
@@ -34,8 +33,7 @@ struct Automata {
     dying_buff: Vec<(i32, i32)>,
     born_buff: Vec<(i32, i32)>,
 
-    prod: Producer<f32>,
-    cons: Consumer<f32>,
+    cons: Option<Consumer<f32>>,
 }
 
 enum Tasks {
@@ -77,7 +75,6 @@ impl Default for Automata {
             Err(_) => nih_log!("error in default fft"),
         };
         // }
-        let (prod, cons) = rtrb::RingBuffer::<f32>::new(FILTER_WINDOW_SIZE * 3);
 
         Self {
             params: Arc::new(AutomataParams::default()),
@@ -95,8 +92,7 @@ impl Default for Automata {
             born_buff,
             dying_buff,
 
-            prod,
-            cons,
+            cons: None,
         }
     }
 }
@@ -149,14 +145,22 @@ impl Plugin for Automata {
     type BackgroundTask = Tasks;
 
     fn task_executor(&mut self) -> TaskExecutor<Self> {
-        Box::new(|task: Tasks| match task {
-            Tasks::CalcStep => match self.prod.write_chunk(1) {
-                Ok(mut p) => {
-                    let (s_1, s_2) = p.as_mut_slices();
-                    s_1[0] = 2.0;
-                    p.commit_all();
-                }
-                Err(_) => nih_log!("error writing chunk in prod"),
+        let (prod, cons) = RingBuffer::<f32>::new(FILTER_WINDOW_SIZE * 3);
+
+        let protected_prod = Arc::new(Mutex::new(prod));
+        self.cons = Some(cons);
+
+        Box::new(move |task: Tasks| match task {
+            Tasks::CalcStep => match protected_prod.try_lock() {
+                Ok(mut p_lock) => match p_lock.write_chunk(1) {
+                    Ok(mut p) => {
+                        let (s_1, _) = p.as_mut_slices();
+                        s_1[0] = 2.0;
+                        p.commit_all();
+                    }
+                    Err(_) => nih_log!("error writing chunk in prod"),
+                },
+                Err(_) => nih_log!("error when trying to get lock"),
             },
         })
     }
@@ -199,28 +203,26 @@ impl Plugin for Automata {
         &mut self,
         buffer: &mut Buffer,
         _aux: &mut AuxiliaryBuffers,
-        _context: &mut impl ProcessContext<Self>,
+        context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
+        let mut gainthing = 1.0;
+
         if self.params.running.value() {
-            step(
-                &mut self.current_board,
-                &mut self.born_buff,
-                &mut self.dying_buff,
-            );
-
-            build_ir(&self.current_board, &mut self.game_real_buff);
-
-            match self.fft.process_with_scratch(
-                &mut self.game_real_buff,
-                &mut self.game_comp_buff,
-                &mut [],
-            ) {
-                Ok(_) => {}
-                Err(_e) => {
-                    nih_log!("game fft error");
-                    panic!()
+            match self
+                .cons
+                .as_mut()
+                .expect("initialized in task executor func")
+                .read_chunk(1)
+            {
+                Ok(c) => {
+                    let (s_1, _) = c.as_slices();
+                    gainthing = s_1[0];
+                    c.commit_all();
                 }
-            };
+                Err(_) => nih_log!("error reading chunk"),
+            }
+
+            context.execute_background(Tasks::CalcStep);
         }
 
         self.stft
@@ -237,7 +239,7 @@ impl Plugin for Automata {
                 };
 
                 for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.game_comp_buff) {
-                    *fft_bin *= *kernel_bin * GAIN_COMP;
+                    *fft_bin *= *kernel_bin * GAIN_COMP * gainthing;
                 }
 
                 match self
