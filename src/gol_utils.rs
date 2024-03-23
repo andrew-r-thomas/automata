@@ -42,11 +42,10 @@ pub fn build_random(board: &mut HashSet<(i32, i32)>, rng: &mut SmallRng) {
     }
 }
 
-pub fn step(
-    current_board: &mut HashSet<(i32, i32)>,
-    born: &mut Vec<(i32, i32)>,
-    dying: &mut Vec<(i32, i32)>,
-) {
+pub fn step(current_board: &mut HashSet<(i32, i32)>) {
+    let mut born = vec![];
+    let mut dying = vec![];
+
     for cell in current_board.iter() {
         let neighbors = find_neighbors(&cell);
 
@@ -82,6 +81,8 @@ pub fn step(
 }
 
 pub fn build_ir(board: &HashSet<(i32, i32)>, real_buff: &mut Vec<f32>) {
+    real_buff.fill(0.0);
+
     for i in 0..FILTER_WINDOW_SIZE {
         real_buff[i] = {
             let mut out = 0.0;
