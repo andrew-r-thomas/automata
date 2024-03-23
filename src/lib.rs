@@ -1,18 +1,15 @@
 pub mod consts;
 pub mod editor;
+pub mod gol;
 pub mod gol_utils;
 
-use crate::gol_utils::{build_random, step};
-use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 use consts::*;
 
-use gol_utils::build_ir;
+use gol::GOL;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
-use rand::rngs::SmallRng;
-use rand::SeedableRng;
 use realfft::num_complex::Complex;
 use realfft::{ComplexToReal, FftError, RealFftPlanner, RealToComplex};
 use rtrb::{Consumer, RingBuffer};
@@ -26,14 +23,9 @@ struct Automata {
     stft: util::StftHelper,
 
     comp_buff: Vec<Complex<f32>>,
-    game_real_buff: Vec<f32>,
     game_comp_buff: Vec<Complex<f32>>,
 
-    current_board: HashSet<(i32, i32)>,
-    dying_buff: Vec<(i32, i32)>,
-    born_buff: Vec<(i32, i32)>,
-
-    cons: Option<Consumer<f32>>,
+    cons: Option<Consumer<Complex<f32>>>,
 }
 
 enum Tasks {
@@ -56,30 +48,10 @@ impl Default for Automata {
         let ifft = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
 
         let comp_buff = ifft.make_input_vec();
-        let mut game_real_buff = fft.make_input_vec();
-        let mut game_comp_buff = fft.make_output_vec();
-
-        let mut current_board: HashSet<(i32, i32)> =
-            HashSet::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
-        let mut rng = SmallRng::seed_from_u64(SEED);
-        let mut born_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
-        let mut dying_buff = Vec::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE);
-
-        build_random(&mut current_board, &mut rng);
-        // for _ in 0..1000 {
-        //     step(&mut current_board, &mut born_buff, &mut dying_buff);
-        build_ir(&current_board, &mut game_real_buff);
-
-        match fft.process_with_scratch(&mut game_real_buff, &mut game_comp_buff, &mut []) {
-            Ok(_) => {}
-            Err(_) => nih_log!("error in default fft"),
-        };
-        // }
+        let game_comp_buff = fft.make_output_vec();
 
         Self {
             params: Arc::new(AutomataParams::default()),
-
-            current_board: HashSet::with_capacity(FILTER_WINDOW_SIZE * FILTER_WINDOW_SIZE),
 
             fft,
             ifft,
@@ -87,10 +59,7 @@ impl Default for Automata {
             stft: util::StftHelper::new(2, WINDOW_SIZE, FFT_WINDOW_SIZE - WINDOW_SIZE),
 
             comp_buff,
-            game_real_buff,
             game_comp_buff,
-            born_buff,
-            dying_buff,
 
             cons: None,
         }
@@ -138,29 +107,20 @@ impl Plugin for Automata {
     // messages here. The type implements the `SysExMessage` trait, which allows conversion to and
     // from plain byte buffers.
     type SysExMessage = ();
-    // More advanced plugins can use this to run expensive background tasks. See the field's
-    // documentation for more information. `()` means that the plugin does not have any background
-    // tasks.
 
     type BackgroundTask = Tasks;
 
     fn task_executor(&mut self) -> TaskExecutor<Self> {
-        let (prod, cons) = RingBuffer::<f32>::new(FILTER_WINDOW_SIZE * 3);
+        let (prod, cons) = RingBuffer::<Complex<f32>>::new(self.game_comp_buff.len() * 3);
+        let gol = GOL::new(prod, FILTER_WINDOW_SIZE, FFT_WINDOW_SIZE, SEED);
+        let protec = Arc::new(Mutex::new(gol));
 
-        let protected_prod = Arc::new(Mutex::new(prod));
         self.cons = Some(cons);
 
         Box::new(move |task: Tasks| match task {
-            Tasks::CalcStep => match protected_prod.try_lock() {
-                Ok(mut p_lock) => match p_lock.write_chunk(1) {
-                    Ok(mut p) => {
-                        let (s_1, _) = p.as_mut_slices();
-                        s_1[0] = 2.0;
-                        p.commit_all();
-                    }
-                    Err(_) => nih_log!("error writing chunk in prod"),
-                },
-                Err(_) => nih_log!("error when trying to get lock"),
+            Tasks::CalcStep => match protec.try_lock() {
+                Ok(mut gol_lock) => gol_lock.advance(),
+                Err(_) => nih_log!("error taking lock"),
             },
         })
     }
@@ -205,24 +165,27 @@ impl Plugin for Automata {
         _aux: &mut AuxiliaryBuffers,
         context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        let mut gainthing = 1.0;
-
         if self.params.running.value() {
-            match self
-                .cons
-                .as_mut()
-                .expect("initialized in task executor func")
-                .read_chunk(1)
-            {
-                Ok(c) => {
-                    let (s_1, _) = c.as_slices();
-                    gainthing = s_1[0];
-                    c.commit_all();
-                }
-                Err(_) => nih_log!("error reading chunk"),
-            }
-
             context.execute_background(Tasks::CalcStep);
+        }
+
+        match self
+            .cons
+            .as_mut()
+            .expect("initialized in task executor func")
+            .read_chunk(self.game_comp_buff.len())
+        {
+            Ok(c) => {
+                let (s1, s2) = c.as_slices();
+                let len1 = s1.len();
+                let len2 = s2.len();
+
+                self.game_comp_buff[0..len1].copy_from_slice(s1);
+                self.game_comp_buff[0..len2].copy_from_slice(s2);
+
+                c.commit_all();
+            }
+            Err(_) => nih_log!("error reading chunk"),
         }
 
         self.stft
@@ -239,7 +202,7 @@ impl Plugin for Automata {
                 };
 
                 for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.game_comp_buff) {
-                    *fft_bin *= *kernel_bin * GAIN_COMP * gainthing;
+                    *fft_bin *= *kernel_bin * GAIN_COMP;
                 }
 
                 match self
