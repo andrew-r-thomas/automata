@@ -1,5 +1,4 @@
 use crate::{Automata, AutomataParams, Tasks};
-
 use std::sync::Arc;
 
 use nih_plug::editor::Editor;
