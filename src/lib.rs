@@ -163,7 +163,7 @@ impl Plugin for Automata {
         &mut self,
         buffer: &mut Buffer,
         _aux: &mut AuxiliaryBuffers,
-        _context: &mut impl ProcessContext<Self>,
+        context: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
         match self
             .cons
@@ -182,6 +182,8 @@ impl Plugin for Automata {
                 self.game_comp_buff[len1..len1 + len2].copy_from_slice(s2);
 
                 c.commit_all();
+
+                context.execute_background(Tasks::Run(1))
             }
             Err(_) => {}
         }
