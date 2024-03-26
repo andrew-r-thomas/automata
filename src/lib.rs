@@ -20,9 +20,10 @@ struct Automata {
     fft: Arc<dyn RealToComplex<f32>>,
     ifft: Arc<dyn ComplexToReal<f32>>,
 
-    stft: util::StftHelper,
+    out: Vec<Vec<f32>>,
 
     comp_buff: Vec<Complex<f32>>,
+    real_buff: Vec<f32>,
     game_comp_buff: Vec<Complex<f32>>,
 
     cons: Option<Consumer<Complex<f32>>>,
@@ -49,6 +50,7 @@ impl Default for Automata {
 
         let comp_buff = ifft.make_input_vec();
         let game_comp_buff = fft.make_output_vec();
+        let real_buff = fft.make_input_vec();
 
         Self {
             params: Arc::new(AutomataParams::default()),
@@ -56,10 +58,12 @@ impl Default for Automata {
             fft,
             ifft,
 
-            stft: util::StftHelper::new(2, WINDOW_SIZE, FFT_WINDOW_SIZE - WINDOW_SIZE),
+            // TODO im not sure if this size is right
+            out: vec![Vec::with_capacity(FFT_WINDOW_SIZE * 2); 2],
 
             comp_buff,
             game_comp_buff,
+            real_buff,
 
             cons: None,
         }
@@ -147,7 +151,7 @@ impl Plugin for Automata {
         // Resize buffers and perform other potentially expensive initialization operations here.
         // The `reset()` function is always called right after this function. You can remove this
         // function if you do not need it.
-        context.set_latency_samples(self.stft.latency_samples() + (FILTER_WINDOW_SIZE as u32 / 2));
+        context.set_latency_samples((FFT_WINDOW_SIZE / 2) as u32);
 
         true
     }
@@ -155,8 +159,6 @@ impl Plugin for Automata {
     fn reset(&mut self) {
         // Reset buffers and envelopes here. This can be called from the audio thread and may not
         // allocate. You can remove this function if you do not need it.
-
-        self.stft.set_block_size(WINDOW_SIZE);
     }
 
     fn process(
@@ -186,27 +188,76 @@ impl Plugin for Automata {
             Err(_) => {}
         }
 
-        self.stft
-            .process_overlap_add(buffer, 1, |_channel, real_buff| {
-                match self
-                    .fft
-                    .process_with_scratch(real_buff, &mut self.comp_buff, &mut [])
-                {
-                    Ok(_) => {}
-                    Err(_e) => {
-                        nih_log!("audio fft error");
-                        panic!()
-                    }
-                };
+        // match self
+        //     .fft
+        //     .process_with_scratch(real_buff, &mut self.comp_buff, &mut [])
+        // {
+        //     Ok(_) => {}
+        //     Err(_e) => {
+        //         nih_log!("audio fft error");
+        //         panic!()
+        //     }
+        // };
+
+        // for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.game_comp_buff) {
+        //     *fft_bin *= *kernel_bin * GAIN_COMP;
+        // }
+
+        // match self
+        //     .ifft
+        //     .process_with_scratch(&mut self.comp_buff, real_buff, &mut [])
+        // {
+        //     Ok(_) => {}
+        //     Err(e) => match e {
+        //         FftError::InputBuffer(_, _) => {
+        //             nih_log!("ifft error: input buffer");
+        //         }
+        //         FftError::OutputBuffer(_, _) => {
+        //             nih_log!("ifft error: output buffer");
+        //         }
+        //         FftError::ScratchBuffer(_, _) => {
+        //             nih_log!("ifft error: scratch buffer");
+        //         }
+        //         FftError::InputValues(first, last) => {
+        //             nih_log!("ifft input values error");
+        //             if first {
+        //                 nih_log!("first bad")
+        //             }
+        //             if last {
+        //                 nih_log!("last bad")
+        //             }
+        //         }
+        //     },
+        // };
+
+        for block in buffer.iter_blocks(WINDOW_SIZE) {
+            let outs = self.out.iter_mut();
+            let channels = block.1.into_iter();
+            for (c, o) in channels.zip(outs) {
+                // add the new samples to this channels ringbuff
+                o.extend(c.iter());
+
+                if o.len() < WINDOW_SIZE {
+                    continue;
+                }
+
+                self.real_buff.fill(0.0);
+                self.real_buff[0..WINDOW_SIZE].copy_from_slice(&o[0..WINDOW_SIZE]);
+                o.rotate_left(WINDOW_SIZE);
+
+                self.fft
+                    .process_with_scratch(&mut self.real_buff, &mut self.comp_buff, &mut [])
+                    .unwrap();
 
                 for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.game_comp_buff) {
                     *fft_bin *= *kernel_bin * GAIN_COMP;
                 }
 
-                match self
-                    .ifft
-                    .process_with_scratch(&mut self.comp_buff, real_buff, &mut [])
-                {
+                match self.ifft.process_with_scratch(
+                    &mut self.comp_buff,
+                    &mut self.real_buff,
+                    &mut [],
+                ) {
                     Ok(_) => {}
                     Err(e) => match e {
                         FftError::InputBuffer(_, _) => {
@@ -229,7 +280,15 @@ impl Plugin for Automata {
                         }
                     },
                 };
-            });
+
+                for (out_val, fft_val) in o.iter_mut().zip(&self.real_buff) {
+                    *out_val += fft_val;
+                }
+
+                c.copy_from_slice(&o[0..c.len()]);
+                o.rotate_left(c.len());
+            }
+        }
 
         ProcessStatus::Normal
     }
