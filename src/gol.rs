@@ -179,21 +179,13 @@ impl GOL {
             self.real_buff[i] = {
                 let mut out = 0.0;
                 for j in 0..self.size {
-                    let b_ij = match (
-                        self.current_board.contains(&(i as i32, j as i32)),
-                        i % 2 == 0,
-                    ) {
-                        (true, true) => 1.0,
-                        (true, false) => -1.0,
-                        _ => 0.0,
+                    let b_ij = match self.current_board.contains(&(i as i32, j as i32)) {
+                        true => 1.0,
+                        false => 0.0,
                     };
-                    let b_ji = match (
-                        self.current_board.contains(&(j as i32, i as i32)),
-                        i % 2 == 0,
-                    ) {
-                        (true, true) => 1.0,
-                        (true, false) => -1.0,
-                        _ => 0.0,
+                    let b_ji = match self.current_board.contains(&(j as i32, i as i32)) {
+                        true => 1.0,
+                        false => 0.0,
                     };
 
                     out += b_ij + b_ji;

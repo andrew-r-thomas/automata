@@ -1,6 +1,8 @@
-use nih_plug::nih_log;
+use nih_plug::util::window;
 
 fn main() {
-    nih_log!("like what in the fuck dude");
-    println!("ok so this?")
+    let hann = window::hann(64);
+    for h in hann {
+        println!("{}", h);
+    }
 }
