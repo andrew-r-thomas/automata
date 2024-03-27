@@ -1,306 +1,306 @@
-pub mod consts;
-pub mod editor;
-pub mod gol;
-pub mod gol_utils;
+// pub mod consts;
+// pub mod editor;
+// pub mod gol;
+// pub mod gol_utils;
 
-use std::sync::{Arc, Mutex};
+// use std::sync::{Arc, Mutex};
 
-use consts::*;
+// use consts::*;
 
-use gol::GOL;
-use nih_plug::prelude::*;
-use nih_plug_vizia::ViziaState;
-use realfft::num_complex::Complex;
-use realfft::{ComplexToReal, FftError, RealFftPlanner, RealToComplex};
-use rtrb::{Consumer, RingBuffer};
+// use gol::GOL;
+// use nih_plug::prelude::*;
+// use nih_plug_vizia::ViziaState;
+// use realfft::num_complex::Complex;
+// use realfft::{ComplexToReal, FftError, RealFftPlanner, RealToComplex};
+// use rtrb::{Consumer, RingBuffer};
 
-struct Automata {
-    params: Arc<AutomataParams>,
+// struct Automata {
+//     params: Arc<AutomataParams>,
 
-    fft: Arc<dyn RealToComplex<f32>>,
-    ifft: Arc<dyn ComplexToReal<f32>>,
+//     fft: Arc<dyn RealToComplex<f32>>,
+//     ifft: Arc<dyn ComplexToReal<f32>>,
 
-    out: Vec<Vec<f32>>,
+//     out: Vec<Vec<f32>>,
 
-    comp_buff: Vec<Complex<f32>>,
-    real_buff: Vec<f32>,
-    game_comp_buff: Vec<Complex<f32>>,
+//     comp_buff: Vec<Complex<f32>>,
+//     real_buff: Vec<f32>,
+//     game_comp_buff: Vec<Complex<f32>>,
 
-    cons: Option<Consumer<Complex<f32>>>,
-}
+//     cons: Option<Consumer<Complex<f32>>>,
+// }
 
-enum Tasks {
-    Run(usize),
-}
+// enum Tasks {
+//     Run(usize),
+// }
 
-#[derive(Params)]
-struct AutomataParams {
-    #[id = "running"]
-    running: BoolParam,
+// #[derive(Params)]
+// struct AutomataParams {
+//     #[id = "running"]
+//     running: BoolParam,
 
-    #[persist = "editor-state"]
-    editor_state: Arc<ViziaState>,
-}
+//     #[persist = "editor-state"]
+//     editor_state: Arc<ViziaState>,
+// }
 
-impl Default for Automata {
-    fn default() -> Self {
-        let mut planner = RealFftPlanner::new();
-        let fft = planner.plan_fft_forward(FFT_WINDOW_SIZE);
-        let ifft = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
+// impl Default for Automata {
+//     fn default() -> Self {
+//         let mut planner = RealFftPlanner::new();
+//         let fft = planner.plan_fft_forward(FFT_WINDOW_SIZE);
+//         let ifft = planner.plan_fft_inverse(FFT_WINDOW_SIZE);
 
-        let comp_buff = ifft.make_input_vec();
-        let game_comp_buff = fft.make_output_vec();
-        let real_buff = fft.make_input_vec();
+//         let comp_buff = ifft.make_input_vec();
+//         let game_comp_buff = fft.make_output_vec();
+//         let real_buff = fft.make_input_vec();
 
-        Self {
-            params: Arc::new(AutomataParams::default()),
+//         Self {
+//             params: Arc::new(AutomataParams::default()),
 
-            fft,
-            ifft,
+//             fft,
+//             ifft,
 
-            // TODO im not sure if this size is right
-            out: vec![Vec::with_capacity(FFT_WINDOW_SIZE * 2); 2],
+//             // TODO im not sure if this size is right
+//             out: vec![Vec::with_capacity(FFT_WINDOW_SIZE * 2); 2],
 
-            comp_buff,
-            game_comp_buff,
-            real_buff,
+//             comp_buff,
+//             game_comp_buff,
+//             real_buff,
 
-            cons: None,
-        }
-    }
-}
+//             cons: None,
+//         }
+//     }
+// }
 
-impl Default for AutomataParams {
-    fn default() -> Self {
-        Self {
-            editor_state: editor::default_state(),
-            running: BoolParam::new("running", false),
-        }
-    }
-}
+// impl Default for AutomataParams {
+//     fn default() -> Self {
+//         Self {
+//             editor_state: editor::default_state(),
+//             running: BoolParam::new("running", false),
+//         }
+//     }
+// }
 
-impl Plugin for Automata {
-    const NAME: &'static str = "Automata";
-    const VENDOR: &'static str = "Andrew Thomas";
-    const URL: &'static str = env!("CARGO_PKG_HOMEPAGE");
-    const EMAIL: &'static str = "andrew.r.j.thomas@gmail.com";
+// impl Plugin for Automata {
+//     const NAME: &'static str = "Automata";
+//     const VENDOR: &'static str = "Andrew Thomas";
+//     const URL: &'static str = env!("CARGO_PKG_HOMEPAGE");
+//     const EMAIL: &'static str = "andrew.r.j.thomas@gmail.com";
 
-    const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+//     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
-    // The first audio IO layout is used as the default. The other layouts may be selected either
-    // explicitly or automatically by the host or the user depending on the plugin API/backend.
-    const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {
-        main_input_channels: NonZeroU32::new(2),
-        main_output_channels: NonZeroU32::new(2),
+//     // The first audio IO layout is used as the default. The other layouts may be selected either
+//     // explicitly or automatically by the host or the user depending on the plugin API/backend.
+//     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {
+//         main_input_channels: NonZeroU32::new(2),
+//         main_output_channels: NonZeroU32::new(2),
 
-        aux_input_ports: &[],
-        aux_output_ports: &[],
+//         aux_input_ports: &[],
+//         aux_output_ports: &[],
 
-        // Individual ports and the layout as a whole can be named here. By default these names
-        // are generated as needed. This layout will be called 'Stereo', while a layout with
-        // only one input and output channel would be called 'Mono'.
-        names: PortNames::const_default(),
-    }];
+//         // Individual ports and the layout as a whole can be named here. By default these names
+//         // are generated as needed. This layout will be called 'Stereo', while a layout with
+//         // only one input and output channel would be called 'Mono'.
+//         names: PortNames::const_default(),
+//     }];
 
-    const MIDI_INPUT: MidiConfig = MidiConfig::None;
-    const MIDI_OUTPUT: MidiConfig = MidiConfig::None;
+//     const MIDI_INPUT: MidiConfig = MidiConfig::None;
+//     const MIDI_OUTPUT: MidiConfig = MidiConfig::None;
 
-    const SAMPLE_ACCURATE_AUTOMATION: bool = true;
+//     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
-    // If the plugin can send or receive SysEx messages, it can define a type to wrap around those
-    // messages here. The type implements the `SysExMessage` trait, which allows conversion to and
-    // from plain byte buffers.
-    type SysExMessage = ();
+//     // If the plugin can send or receive SysEx messages, it can define a type to wrap around those
+//     // messages here. The type implements the `SysExMessage` trait, which allows conversion to and
+//     // from plain byte buffers.
+//     type SysExMessage = ();
 
-    type BackgroundTask = Tasks;
+//     type BackgroundTask = Tasks;
 
-    fn task_executor(&mut self) -> TaskExecutor<Self> {
-        let (prod, cons) = RingBuffer::<Complex<f32>>::new(self.game_comp_buff.len() * 1000);
-        let gol = GOL::new(prod, FILTER_WINDOW_SIZE, FFT_WINDOW_SIZE, SEED);
-        let protec = Arc::new(Mutex::new(gol));
+//     fn task_executor(&mut self) -> TaskExecutor<Self> {
+//         let (prod, cons) = RingBuffer::<Complex<f32>>::new(self.game_comp_buff.len() * 1000);
+//         let gol = GOL::new(prod, FILTER_WINDOW_SIZE, FFT_WINDOW_SIZE, SEED);
+//         let protec = Arc::new(Mutex::new(gol));
 
-        self.cons = Some(cons);
+//         self.cons = Some(cons);
 
-        Box::new(move |task: Tasks| match task {
-            Tasks::Run(x) => match protec.try_lock() {
-                Ok(mut gol_lock) => gol_lock.start(x),
-                Err(_) => nih_log!("error taking lock"),
-            },
-        })
-    }
+//         Box::new(move |task: Tasks| match task {
+//             Tasks::Run(x) => match protec.try_lock() {
+//                 Ok(mut gol_lock) => gol_lock.start(x),
+//                 Err(_) => nih_log!("error taking lock"),
+//             },
+//         })
+//     }
 
-    fn params(&self) -> Arc<dyn Params> {
-        self.params.clone()
-    }
+//     fn params(&self) -> Arc<dyn Params> {
+//         self.params.clone()
+//     }
 
-    fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        let e = editor::create(
-            self.params.clone(),
-            self.params.editor_state.clone(),
-            async_executor.clone(),
-        );
-        e
-    }
+//     fn editor(&mut self, async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
+//         let e = editor::create(
+//             self.params.clone(),
+//             self.params.editor_state.clone(),
+//             async_executor.clone(),
+//         );
+//         e
+//     }
 
-    fn initialize(
-        &mut self,
-        _audio_io_layout: &AudioIOLayout,
-        _buffer_config: &BufferConfig,
-        context: &mut impl InitContext<Self>,
-    ) -> bool {
-        // Resize buffers and perform other potentially expensive initialization operations here.
-        // The `reset()` function is always called right after this function. You can remove this
-        // function if you do not need it.
-        context.set_latency_samples((FFT_WINDOW_SIZE / 2) as u32);
+//     fn initialize(
+//         &mut self,
+//         _audio_io_layout: &AudioIOLayout,
+//         _buffer_config: &BufferConfig,
+//         context: &mut impl InitContext<Self>,
+//     ) -> bool {
+//         // Resize buffers and perform other potentially expensive initialization operations here.
+//         // The `reset()` function is always called right after this function. You can remove this
+//         // function if you do not need it.
+//         context.set_latency_samples((FFT_WINDOW_SIZE / 2) as u32);
 
-        true
-    }
+//         true
+//     }
 
-    fn reset(&mut self) {
-        // Reset buffers and envelopes here. This can be called from the audio thread and may not
-        // allocate. You can remove this function if you do not need it.
-    }
+//     fn reset(&mut self) {
+//         // Reset buffers and envelopes here. This can be called from the audio thread and may not
+//         // allocate. You can remove this function if you do not need it.
+//     }
 
-    fn process(
-        &mut self,
-        buffer: &mut Buffer,
-        _aux: &mut AuxiliaryBuffers,
-        _context: &mut impl ProcessContext<Self>,
-    ) -> ProcessStatus {
-        match self
-            .cons
-            .as_mut()
-            .expect("initialized in task executor func")
-            .read_chunk(self.game_comp_buff.len())
-        {
-            Ok(c) => {
-                let (s1, s2) = c.as_slices();
-                let len1 = s1.len();
-                let len2 = s2.len();
+//     fn process(
+//         &mut self,
+//         buffer: &mut Buffer,
+//         _aux: &mut AuxiliaryBuffers,
+//         _context: &mut impl ProcessContext<Self>,
+//     ) -> ProcessStatus {
+//         match self
+//             .cons
+//             .as_mut()
+//             .expect("initialized in task executor func")
+//             .read_chunk(self.game_comp_buff.len())
+//         {
+//             Ok(c) => {
+//                 let (s1, s2) = c.as_slices();
+//                 let len1 = s1.len();
+//                 let len2 = s2.len();
 
-                self.game_comp_buff.fill(Complex { re: 0.0, im: 0.0 });
+//                 self.game_comp_buff.fill(Complex { re: 0.0, im: 0.0 });
 
-                self.game_comp_buff[0..len1].copy_from_slice(s1);
-                self.game_comp_buff[len1..len1 + len2].copy_from_slice(s2);
+//                 self.game_comp_buff[0..len1].copy_from_slice(s1);
+//                 self.game_comp_buff[len1..len1 + len2].copy_from_slice(s2);
 
-                c.commit_all();
-            }
-            Err(_) => {}
-        }
+//                 c.commit_all();
+//             }
+//             Err(_) => {}
+//         }
 
-        // match self
-        //     .fft
-        //     .process_with_scratch(real_buff, &mut self.comp_buff, &mut [])
-        // {
-        //     Ok(_) => {}
-        //     Err(_e) => {
-        //         nih_log!("audio fft error");
-        //         panic!()
-        //     }
-        // };
+//         // match self
+//         //     .fft
+//         //     .process_with_scratch(real_buff, &mut self.comp_buff, &mut [])
+//         // {
+//         //     Ok(_) => {}
+//         //     Err(_e) => {
+//         //         nih_log!("audio fft error");
+//         //         panic!()
+//         //     }
+//         // };
 
-        // for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.game_comp_buff) {
-        //     *fft_bin *= *kernel_bin * GAIN_COMP;
-        // }
+//         // for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.game_comp_buff) {
+//         //     *fft_bin *= *kernel_bin * GAIN_COMP;
+//         // }
 
-        // match self
-        //     .ifft
-        //     .process_with_scratch(&mut self.comp_buff, real_buff, &mut [])
-        // {
-        //     Ok(_) => {}
-        //     Err(e) => match e {
-        //         FftError::InputBuffer(_, _) => {
-        //             nih_log!("ifft error: input buffer");
-        //         }
-        //         FftError::OutputBuffer(_, _) => {
-        //             nih_log!("ifft error: output buffer");
-        //         }
-        //         FftError::ScratchBuffer(_, _) => {
-        //             nih_log!("ifft error: scratch buffer");
-        //         }
-        //         FftError::InputValues(first, last) => {
-        //             nih_log!("ifft input values error");
-        //             if first {
-        //                 nih_log!("first bad")
-        //             }
-        //             if last {
-        //                 nih_log!("last bad")
-        //             }
-        //         }
-        //     },
-        // };
+//         // match self
+//         //     .ifft
+//         //     .process_with_scratch(&mut self.comp_buff, real_buff, &mut [])
+//         // {
+//         //     Ok(_) => {}
+//         //     Err(e) => match e {
+//         //         FftError::InputBuffer(_, _) => {
+//         //             nih_log!("ifft error: input buffer");
+//         //         }
+//         //         FftError::OutputBuffer(_, _) => {
+//         //             nih_log!("ifft error: output buffer");
+//         //         }
+//         //         FftError::ScratchBuffer(_, _) => {
+//         //             nih_log!("ifft error: scratch buffer");
+//         //         }
+//         //         FftError::InputValues(first, last) => {
+//         //             nih_log!("ifft input values error");
+//         //             if first {
+//         //                 nih_log!("first bad")
+//         //             }
+//         //             if last {
+//         //                 nih_log!("last bad")
+//         //             }
+//         //         }
+//         //     },
+//         // };
 
-        for block in buffer.iter_blocks(WINDOW_SIZE) {
-            let outs = self.out.iter_mut();
-            let channels = block.1.into_iter();
-            for (c, o) in channels.zip(outs) {
-                // add the new samples to this channels ringbuff
-                o.extend(c.iter());
+//         for block in buffer.iter_blocks(WINDOW_SIZE) {
+//             let outs = self.out.iter_mut();
+//             let channels = block.1.into_iter();
+//             for (c, o) in channels.zip(outs) {
+//                 // add the new samples to this channels ringbuff
+//                 o.extend(c.iter());
 
-                if o.len() < WINDOW_SIZE {
-                    continue;
-                }
+//                 if o.len() < WINDOW_SIZE {
+//                     continue;
+//                 }
 
-                self.real_buff.fill(0.0);
-                self.real_buff[0..WINDOW_SIZE].copy_from_slice(&o[0..WINDOW_SIZE]);
-                o.rotate_left(WINDOW_SIZE);
+//                 self.real_buff.fill(0.0);
+//                 self.real_buff[0..WINDOW_SIZE].copy_from_slice(&o[0..WINDOW_SIZE]);
+//                 o.rotate_left(WINDOW_SIZE);
 
-                self.fft
-                    .process_with_scratch(&mut self.real_buff, &mut self.comp_buff, &mut [])
-                    .unwrap();
+//                 self.fft
+//                     .process_with_scratch(&mut self.real_buff, &mut self.comp_buff, &mut [])
+//                     .unwrap();
 
-                for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.game_comp_buff) {
-                    *fft_bin *= *kernel_bin * GAIN_COMP;
-                }
+//                 for (fft_bin, kernel_bin) in self.comp_buff.iter_mut().zip(&self.game_comp_buff) {
+//                     *fft_bin *= *kernel_bin * GAIN_COMP;
+//                 }
 
-                match self.ifft.process_with_scratch(
-                    &mut self.comp_buff,
-                    &mut self.real_buff,
-                    &mut [],
-                ) {
-                    Ok(_) => {}
-                    Err(e) => match e {
-                        FftError::InputBuffer(_, _) => {
-                            nih_log!("ifft error: input buffer");
-                        }
-                        FftError::OutputBuffer(_, _) => {
-                            nih_log!("ifft error: output buffer");
-                        }
-                        FftError::ScratchBuffer(_, _) => {
-                            nih_log!("ifft error: scratch buffer");
-                        }
-                        FftError::InputValues(first, last) => {
-                            nih_log!("ifft input values error");
-                            if first {
-                                nih_log!("first bad")
-                            }
-                            if last {
-                                nih_log!("last bad")
-                            }
-                        }
-                    },
-                };
+//                 match self.ifft.process_with_scratch(
+//                     &mut self.comp_buff,
+//                     &mut self.real_buff,
+//                     &mut [],
+//                 ) {
+//                     Ok(_) => {}
+//                     Err(e) => match e {
+//                         FftError::InputBuffer(_, _) => {
+//                             nih_log!("ifft error: input buffer");
+//                         }
+//                         FftError::OutputBuffer(_, _) => {
+//                             nih_log!("ifft error: output buffer");
+//                         }
+//                         FftError::ScratchBuffer(_, _) => {
+//                             nih_log!("ifft error: scratch buffer");
+//                         }
+//                         FftError::InputValues(first, last) => {
+//                             nih_log!("ifft input values error");
+//                             if first {
+//                                 nih_log!("first bad")
+//                             }
+//                             if last {
+//                                 nih_log!("last bad")
+//                             }
+//                         }
+//                     },
+//                 };
 
-                for (out_val, fft_val) in o.iter_mut().zip(&self.real_buff) {
-                    *out_val += fft_val;
-                }
+//                 for (out_val, fft_val) in o.iter_mut().zip(&self.real_buff) {
+//                     *out_val += fft_val;
+//                 }
 
-                c.copy_from_slice(&o[0..c.len()]);
-                o.rotate_left(c.len());
-            }
-        }
+//                 c.copy_from_slice(&o[0..c.len()]);
+//                 o.rotate_left(c.len());
+//             }
+//         }
 
-        ProcessStatus::Normal
-    }
-}
+//         ProcessStatus::Normal
+//     }
+// }
 
-impl Vst3Plugin for Automata {
-    const VST3_CLASS_ID: [u8; 16] = *b"diy!studios_auto";
+// impl Vst3Plugin for Automata {
+//     const VST3_CLASS_ID: [u8; 16] = *b"diy!studios_auto";
 
-    // TODO
-    // And also don't forget to change these categories
-    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
-        &[Vst3SubCategory::Fx, Vst3SubCategory::Dynamics];
-}
+//     // TODO
+//     // And also don't forget to change these categories
+//     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
+//         &[Vst3SubCategory::Fx, Vst3SubCategory::Dynamics];
+// }
 
-nih_export_vst3!(Automata);
+// nih_export_vst3!(Automata);

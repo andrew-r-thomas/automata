@@ -1,99 +1,38 @@
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
-use nih_plug::prelude::nih_log;
 use rand::{rngs::SmallRng, Rng, SeedableRng};
-use realfft::{num_complex::Complex, RealFftPlanner, RealToComplex};
-use rtrb::Producer;
 
 pub struct GOL {
     current_board: HashSet<(i32, i32)>,
-    prod: Producer<Complex<f32>>,
     rng: SmallRng,
-    fft: Arc<dyn RealToComplex<f32>>,
-    real_buff: Vec<f32>,
-    comp_buff: Vec<Complex<f32>>,
     size: usize,
 }
 
-impl GOL {
-    pub fn new(prod: Producer<Complex<f32>>, size: usize, fft_size: usize, seed: u64) -> Self {
-        let mut planner = RealFftPlanner::new();
-        let fft = planner.plan_fft_forward(fft_size);
-        let real_buff = fft.make_input_vec();
-        let comp_buff = fft.make_output_vec();
+enum IRMode {
+    Gemini,
+    Top,
+}
 
+impl GOL {
+    pub fn new(size: usize, seed: u64) -> Self {
         let rng = SmallRng::seed_from_u64(seed);
 
         let mut gol = Self {
             current_board: HashSet::with_capacity(size * size),
-            prod,
             size,
             rng,
-            fft,
-            real_buff,
-            comp_buff,
         };
 
         gol.build_random();
 
-        gol.build_ir();
-
-        match gol
-            .fft
-            .process_with_scratch(&mut gol.real_buff, &mut gol.comp_buff, &mut [])
-        {
-            Ok(_) => {}
-            Err(_) => nih_log!("error with game fft"),
-        }
-
-        match gol.prod.write_chunk(gol.comp_buff.len()) {
-            Ok(mut p) => {
-                let (s1, s2) = p.as_mut_slices();
-                let len1 = s1.len();
-                let len2 = s2.len();
-
-                s1.copy_from_slice(&gol.comp_buff[0..len1]);
-                s2.copy_from_slice(&gol.comp_buff[len1..len1 + len2]);
-
-                p.commit_all();
-            }
-            Err(_) => nih_log!("error writing chunk"),
-        }
+        gol.build_ir(IRMode::Top);
 
         gol
     }
 
-    pub fn start(&mut self, len: usize) {
-        for _ in 0..len {
-            self.advance();
-        }
-    }
-
-    pub fn advance(&mut self) {
+    pub fn advance(&mut self) -> Vec<f32> {
         self.step();
-        self.build_ir();
-
-        match self
-            .fft
-            .process_with_scratch(&mut self.real_buff, &mut self.comp_buff, &mut [])
-        {
-            Ok(_) => {}
-            Err(_) => nih_log!("error with game fft"),
-        }
-
-        match self.prod.write_chunk(self.comp_buff.len()) {
-            Ok(mut p) => {
-                let (s1, s2) = p.as_mut_slices();
-                let len1 = s1.len();
-                let len2 = s2.len();
-
-                s1.copy_from_slice(&self.comp_buff[0..len1]);
-                s2.copy_from_slice(&self.comp_buff[0..len2]);
-
-                p.commit_all();
-            }
-            Err(_) => nih_log!("error writing chunk"),
-        }
+        self.build_ir(IRMode::Top)
     }
 
     fn build_random(&mut self) {
@@ -172,29 +111,46 @@ impl GOL {
         neighbors
     }
 
-    fn build_ir(&mut self) {
-        self.real_buff.fill(0.0);
+    fn build_ir(&mut self, mode: IRMode) -> Vec<f32> {
+        let mut buff = vec![0.0; self.size];
 
         for i in 0..self.size {
-            self.real_buff[i] = {
+            buff[i] = {
                 let mut out = 0.0;
                 for j in 0..self.size {
-                    let b_ij = match (
-                        self.current_board.contains(&(i as i32, j as i32)),
-                        i % 2 == 0,
-                    ) {
-                        (true, true) => 1.0,
-                        (true, false) => -1.0,
-                        _ => 0.0,
-                    };
-                    let b_ji = match (
-                        self.current_board.contains(&(j as i32, i as i32)),
-                        i % 2 == 0,
-                    ) {
-                        (true, true) => 1.0,
-                        (true, false) => -1.0,
-                        _ => 0.0,
-                    };
+                    let mut b_ij = 0.0;
+                    let mut b_ji = 0.0;
+
+                    match mode {
+                        IRMode::Gemini => {
+                            b_ij = match (
+                                self.current_board.contains(&(i as i32, j as i32)),
+                                i % 2 == 0,
+                            ) {
+                                (true, true) => 1.0,
+                                (true, false) => -1.0,
+                                _ => 0.0,
+                            };
+                            b_ji = match (
+                                self.current_board.contains(&(j as i32, i as i32)),
+                                i % 2 == 0,
+                            ) {
+                                (true, true) => 1.0,
+                                (true, false) => -1.0,
+                                _ => 0.0,
+                            };
+                        }
+                        IRMode::Top => {
+                            b_ij = match self.current_board.contains(&(i as i32, j as i32)) {
+                                true => 1.0,
+                                false => 0.0,
+                            };
+                            b_ji = match self.current_board.contains(&(j as i32, i as i32)) {
+                                true => 1.0,
+                                false => 0.0,
+                            };
+                        }
+                    }
 
                     out += b_ij + b_ji;
                 }
@@ -204,10 +160,12 @@ impl GOL {
             }
         }
 
-        let filter_normalization_factor = self.real_buff.iter().sum::<f32>().recip();
+        let filter_normalization_factor = buff.iter().sum::<f32>().recip();
 
-        for sample in &mut self.real_buff {
+        for sample in &mut buff {
             *sample *= filter_normalization_factor;
         }
+
+        buff
     }
 }
