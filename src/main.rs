@@ -11,7 +11,7 @@ fn main() {
         sample_format: hound::SampleFormat::Float,
     };
 
-    let mut writer = hound::WavWriter::create("test.wav", spec).unwrap();
+    let mut writer = hound::WavWriter::create("long_taper.wav", spec).unwrap();
     let mut gol = GOL::new(64, 69);
     for i in 0..(44100 / 32) {
         let ir = gol.advance();

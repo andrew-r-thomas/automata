@@ -8,11 +8,6 @@ pub struct GOL {
     size: usize,
 }
 
-enum IRMode {
-    Gemini,
-    Top,
-}
-
 impl GOL {
     pub fn new(size: usize, seed: u64) -> Self {
         let rng = SmallRng::seed_from_u64(seed);
@@ -25,14 +20,14 @@ impl GOL {
 
         gol.build_random();
 
-        gol.build_ir(IRMode::Top);
+        gol.build_ir();
 
         gol
     }
 
     pub fn advance(&mut self) -> Vec<f32> {
         self.step();
-        self.build_ir(IRMode::Top)
+        self.build_ir()
     }
 
     fn build_random(&mut self) {
@@ -111,46 +106,29 @@ impl GOL {
         neighbors
     }
 
-    fn build_ir(&mut self, mode: IRMode) -> Vec<f32> {
+    fn build_ir(&mut self) -> Vec<f32> {
         let mut buff = vec![0.0; self.size];
 
         for i in 0..self.size {
             buff[i] = {
                 let mut out = 0.0;
                 for j in 0..self.size {
-                    let mut b_ij = 0.0;
-                    let mut b_ji = 0.0;
-
-                    match mode {
-                        IRMode::Gemini => {
-                            b_ij = match (
-                                self.current_board.contains(&(i as i32, j as i32)),
-                                i % 2 == 0,
-                            ) {
-                                (true, true) => 1.0,
-                                (true, false) => -1.0,
-                                _ => 0.0,
-                            };
-                            b_ji = match (
-                                self.current_board.contains(&(j as i32, i as i32)),
-                                i % 2 == 0,
-                            ) {
-                                (true, true) => 1.0,
-                                (true, false) => -1.0,
-                                _ => 0.0,
-                            };
-                        }
-                        IRMode::Top => {
-                            b_ij = match self.current_board.contains(&(i as i32, j as i32)) {
-                                true => 1.0,
-                                false => 0.0,
-                            };
-                            b_ji = match self.current_board.contains(&(j as i32, i as i32)) {
-                                true => 1.0,
-                                false => 0.0,
-                            };
-                        }
-                    }
+                    let b_ij = match (
+                        self.current_board.contains(&(i as i32, j as i32)),
+                        i % 2 == 0,
+                    ) {
+                        (true, true) => 1.0,
+                        (true, false) => -1.0,
+                        _ => 0.0,
+                    };
+                    let b_ji = match (
+                        self.current_board.contains(&(j as i32, i as i32)),
+                        i % 2 == 0,
+                    ) {
+                        (true, true) => 1.0,
+                        (true, false) => -1.0,
+                        _ => 0.0,
+                    };
 
                     out += b_ij + b_ji;
                 }
