@@ -107,34 +107,28 @@ impl GOL {
     }
 
     fn build_ir(&mut self) -> Vec<f32> {
-        let mut buff = vec![0.0; self.size];
+        let mut buff = vec![];
 
         for i in 0..self.size {
-            buff[i] = {
-                let mut out = 0.0;
-                for j in 0..self.size {
-                    let b_ij = match (
-                        self.current_board.contains(&(i as i32, j as i32)),
-                        i % 2 == 0,
-                    ) {
-                        (true, true) => 1.0,
-                        (true, false) => -1.0,
-                        _ => 0.0,
-                    };
-                    let b_ji = match (
-                        self.current_board.contains(&(j as i32, i as i32)),
-                        i % 2 == 0,
-                    ) {
-                        (true, true) => 1.0,
-                        (true, false) => -1.0,
-                        _ => 0.0,
-                    };
+            for j in 0..self.size {
+                let sample = {
+                    let mut out = 0.0;
+                    let neighbors = self.find_neighbors(&(i as i32, j as i32));
 
-                    out += b_ij + b_ji;
-                }
+                    let mut half = 0;
+                    for n in neighbors {
+                        match (self.current_board.contains(&n), half < 4) {
+                            (true, true) => out -= 1.0,
+                            (true, false) => out += 1.0,
+                            _ => {}
+                        }
+                        half += 1;
+                    }
+                    out /= 8.0;
+                    out
+                };
 
-                out /= self.size as f32;
-                out
+                buff.push(sample);
             }
         }
 
